@@ -12,7 +12,7 @@ interface ChatPanelProps {
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatOnly = false, onChannelSelect }) => {
-  const { activeWorkspace, currentUser, setActiveSubTab, theme, users } = useStore();
+  const { activeWorkspace, currentUser, setActiveSubTab, theme } = useStore();
   const [grupos, setGrupos] = useState<ChatGroup[]>([]);
   const [grupoActivo, setGrupoActivo] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
@@ -20,6 +20,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
+  const [miembrosEspacio, setMiembrosEspacio] = useState<any[]>([]);
   
   const mensajesRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
@@ -44,6 +45,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       setLoading(false);
     };
     cargarGrupos();
+
+    // Cargar miembros del espacio
+    const cargarMiembros = async () => {
+      const { data } = await supabase
+        .from('miembros_espacio')
+        .select('usuario:usuarios(id, nombre, email)')
+        .eq('espacio_id', activeWorkspace.id)
+        .eq('aceptado', true);
+      
+      if (data) {
+        setMiembrosEspacio(data.map(m => m.usuario).filter(u => u && u.id !== currentUser.id));
+      }
+    };
+    cargarMiembros();
   }, [activeWorkspace]);
 
   useEffect(() => {
@@ -200,16 +215,16 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
               <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ${theme === 'arcade' ? 'text-[#00ff41]' : ''}`}>Personas</h3>
             </div>
             <div className="space-y-0.5">
-              {users.length > 0 ? users.map(u => (
+              {miembrosEspacio.length > 0 ? miembrosEspacio.map((u: any) => (
                 <button key={u.id} className="w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 truncate opacity-50 hover:opacity-100">
                   <div className="relative">
-                    <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.name.charAt(0)}</div>
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] ${u.isOnline ? 'bg-green-500 animate-pulse' : 'bg-zinc-600'}`} />
+                    <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.nombre?.charAt(0)}</div>
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] bg-green-500`} />
                   </div>
-                  <span className="truncate">{u.name}</span>
+                  <span className="truncate">{u.nombre}</span>
                 </button>
               )) : (
-                 <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">No hay personas conectadas</p>
+                 <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">No hay otros miembros</p>
               )}
               {/* Botón para invitar */}
               <button 
