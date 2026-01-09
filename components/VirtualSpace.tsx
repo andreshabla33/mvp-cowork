@@ -1,8 +1,9 @@
 
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import Phaser from 'phaser';
 import { useStore } from '../store/useStore';
 import { User, Role, PresenceStatus } from '../types';
+import { supabase } from '../lib/supabase';
 
 const MOVE_SPEED = 240; 
 const INITIAL_ZOOM = 1.3;
@@ -108,15 +109,7 @@ const Minimap: React.FC<{ currentUser: User; users: User[]; workspace: any }> = 
             }}
           />
         ))}
-        <div 
-          className="absolute w-1.5 h-1.5 bg-red-500/50 rounded-full"
-          style={{ 
-            left: `${MOCK_BOT.x * scaleX}px`, 
-            top: `${MOCK_BOT.y * scaleY}px`,
-            transform: 'translate(-50%, -50%)'
-          }}
-        />
-      </div>
+              </div>
     </div>
   );
 };
@@ -317,17 +310,104 @@ export const VirtualSpace: React.FC = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [expandedId, setExpandedId] = useState<string | 'local' | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   
   const activeStreamRef = useRef<MediaStream | null>(null);
   const activeScreenRef = useRef<MediaStream | null>(null);
+  const channelRef = useRef<any>(null);
   
   const { 
     currentUser, users, activeWorkspace, setPosition, 
-    toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, theme, addNotification
+    toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, theme, addNotification, session
   } = useStore();
 
   const currentUserRef = useRef(currentUser);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
+
+  // Realtime Presence
+  useEffect(() => {
+    if (!activeWorkspace?.id || !session?.user?.id) return;
+
+    const roomName = `workspace:${activeWorkspace.id}`;
+    const channel = supabase.channel(roomName, {
+      config: { presence: { key: session.user.id } }
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const users: User[] = [];
+        Object.keys(state).forEach(key => {
+          const presences = state[key] as any[];
+          presences.forEach(presence => {
+            if (presence.user_id !== session.user.id) {
+              users.push({
+                id: presence.user_id,
+                name: presence.name || 'Usuario',
+                role: presence.role || Role.MIEMBRO,
+                avatar: '',
+                avatarConfig: presence.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' },
+                x: presence.x || 500,
+                y: presence.y || 500,
+                direction: presence.direction || 'front',
+                isOnline: true,
+                isMicOn: presence.isMicOn || false,
+                isCameraOn: presence.isCameraOn || false,
+                isScreenSharing: false,
+                isPrivate: false,
+                status: PresenceStatus.AVAILABLE,
+              });
+            }
+          });
+        });
+        setOnlineUsers(users);
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        console.log('Usuario conectado:', key, newPresences);
+        addNotification(`${newPresences[0]?.name || 'Alguien'} se conectó`, 'entry');
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        console.log('Usuario desconectado:', key);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: session.user.id,
+            name: currentUser.name,
+            role: currentUser.role,
+            avatarConfig: currentUser.avatarConfig,
+            x: currentUser.x,
+            y: currentUser.y,
+            direction: currentUser.direction,
+            isMicOn: currentUser.isMicOn,
+            isCameraOn: currentUser.isCameraOn,
+          });
+        }
+      });
+
+    channelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeWorkspace?.id, session?.user?.id]);
+
+  // Actualizar presencia cuando cambia la posición
+  useEffect(() => {
+    if (channelRef.current && session?.user?.id) {
+      channelRef.current.track({
+        user_id: session.user.id,
+        name: currentUser.name,
+        role: currentUser.role,
+        avatarConfig: currentUser.avatarConfig,
+        x: currentUser.x,
+        y: currentUser.y,
+        direction: currentUser.direction,
+        isMicOn: currentUser.isMicOn,
+        isCameraOn: currentUser.isCameraOn,
+      });
+    }
+  }, [currentUser.x, currentUser.y, currentUser.isMicOn, currentUser.isCameraOn]);
 
   const themeColors = { 
     dark: '#09090b', 
@@ -337,11 +417,11 @@ export const VirtualSpace: React.FC = () => {
   };
 
   const usersInCall = useMemo(() => {
-    return [...users, MOCK_BOT].filter(u => {
+    return onlineUsers.filter(u => {
       const dist = Math.sqrt(Math.pow(u.x - currentUser.x, 2) + Math.pow(u.y - currentUser.y, 2));
       return dist < PROXIMITY_RADIUS;
     });
-  }, [users, currentUser.x, currentUser.y]);
+  }, [onlineUsers, currentUser.x, currentUser.y]);
   
   const hasActiveCall = usersInCall.length > 0;
 
@@ -563,7 +643,7 @@ export const VirtualSpace: React.FC = () => {
     <div className={`w-full h-full relative overflow-hidden transition-colors duration-500 ${theme === 'arcade' ? 'bg-black' : (theme === 'space' ? 'bg-[#020617]' : (theme === 'light' ? 'bg-zinc-100' : 'bg-[#09090b]'))}`}>
       <div ref={containerRef} className="w-full h-full outline-none z-0" />
       <div className={`fixed inset-0 z-10 bg-black/40 backdrop-blur-md transition-opacity duration-700 pointer-events-none ${currentUser.isPrivate ? 'opacity-100' : 'opacity-0'}`} />
-      <Minimap currentUser={currentUser} users={users} workspace={activeWorkspace} />
+      <Minimap currentUser={currentUser} users={onlineUsers} workspace={activeWorkspace} />
       {(hasActiveCall || currentUser.isScreenSharing) && (
         <VideoHUD 
           userName={currentUser.name} micOn={currentUser.isMicOn} camOn={currentUser.isCameraOn} sharingOn={currentUser.isScreenSharing} isPrivate={currentUser.isPrivate} usersInCall={usersInCall} stream={stream} screenStream={screenStream}
