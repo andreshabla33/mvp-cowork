@@ -1,0 +1,10 @@
+{
+  "name": "Cowork - Virtual Workspace",
+  "description": "A 2D spatial collaboration platform like Gather, featuring proximity-based audio/video, AI-powered assistance (Viben), and integrated task management.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation",
+    "display-capture"
+  ]
+}
