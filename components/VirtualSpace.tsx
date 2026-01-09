@@ -802,13 +802,15 @@ export const VirtualSpace: React.FC = () => {
     onlineUsers.forEach(user => {
       const existing = scene.remotePlayers.get(user.id);
       if (existing) {
-        // Actualizar posición con interpolación suave
+        // Detener tweens anteriores para evitar acumulación
+        scene.tweens.killTweensOf(existing);
+        // Interpolación más suave y larga para movimiento fluido
         scene.tweens.add({
           targets: existing,
           x: user.x,
           y: user.y,
-          duration: 100,
-          ease: 'Linear'
+          duration: 150,
+          ease: 'Sine.easeOut'
         });
       } else {
         // Crear nuevo avatar remoto
