@@ -792,6 +792,41 @@ export const VirtualSpace: React.FC = () => {
     return () => { clearTimeout(timer); gameRef.current?.destroy(true); };
   }, [activeWorkspace?.id, theme]); 
 
+  // Sincronizar avatares remotos con Phaser
+  useEffect(() => {
+    if (!gameRef.current) return;
+    const scene = gameRef.current.scene.getScene('CoworkScene') as any;
+    if (!scene || !scene.remotePlayers) return;
+
+    // Actualizar o crear avatares remotos
+    onlineUsers.forEach(user => {
+      const existing = scene.remotePlayers.get(user.id);
+      if (existing) {
+        // Actualizar posición con interpolación suave
+        scene.tweens.add({
+          targets: existing,
+          x: user.x,
+          y: user.y,
+          duration: 100,
+          ease: 'Linear'
+        });
+      } else {
+        // Crear nuevo avatar remoto
+        const texKey = `remote-${user.id}`;
+        scene.generatePixelAvatar(texKey, user.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' });
+        scene.createRemotePlayer({ ...user, name: user.name }, texKey);
+      }
+    });
+
+    // Eliminar avatares de usuarios que ya no están
+    scene.remotePlayers.forEach((container: any, odId: string) => {
+      if (!onlineUsers.find(u => u.id === odId)) {
+        container.destroy();
+        scene.remotePlayers.delete(odId);
+      }
+    });
+  }, [onlineUsers]);
+
   return (
     <div className={`w-full h-full relative overflow-hidden transition-colors duration-500 ${theme === 'arcade' ? 'bg-black' : (theme === 'space' ? 'bg-[#020617]' : (theme === 'light' ? 'bg-zinc-100' : 'bg-[#09090b]'))}`}>
       <div ref={containerRef} className="w-full h-full outline-none z-0" />
