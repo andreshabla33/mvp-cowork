@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { VirtualSpace } from './VirtualSpace';
 import { TaskBoard } from './TaskBoard';
@@ -9,16 +9,71 @@ import { ChatPanel } from './ChatPanel';
 import { VibenAssistant } from './VibenAssistant';
 import { AvatarPreview } from './Navbar';
 import { Role, PresenceStatus, ThemeType } from '../types';
+import { supabase } from '../lib/supabase';
 
 export const WorkspaceLayout: React.FC = () => {
-  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView } = useStore();
+  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView, session } = useStore();
   const [showViben, setShowViben] = useState(false);
+  const presenceChannelRef = useRef<any>(null);
 
   const onVibenToggle = () => setShowViben(prev => !prev);
 
   useEffect(() => {
     if (!activeWorkspace) setView('dashboard');
   }, [activeWorkspace, setView]);
+
+  // Realtime Presence - se mantiene activa mientras estemos en el workspace
+  useEffect(() => {
+    if (!activeWorkspace?.id || !session?.user?.id) return;
+
+    const roomName = `workspace:${activeWorkspace.id}`;
+    const channel = supabase.channel(roomName, {
+      config: { presence: { key: session.user.id } }
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        // La sincronización se maneja en VirtualSpace
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            user_id: session.user.id,
+            name: currentUser.name,
+            role: currentUser.role,
+            avatarConfig: currentUser.avatarConfig,
+            x: currentUser.x,
+            y: currentUser.y,
+            direction: currentUser.direction,
+            isMicOn: currentUser.isMicOn,
+            isCameraOn: currentUser.isCameraOn,
+          });
+        }
+      });
+
+    presenceChannelRef.current = channel;
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeWorkspace?.id, session?.user?.id]);
+
+  // Actualizar presencia cuando cambia la posición (desde cualquier tab)
+  useEffect(() => {
+    if (presenceChannelRef.current && session?.user?.id) {
+      presenceChannelRef.current.track({
+        user_id: session.user.id,
+        name: currentUser.name,
+        role: currentUser.role,
+        avatarConfig: currentUser.avatarConfig,
+        x: currentUser.x,
+        y: currentUser.y,
+        direction: currentUser.direction,
+        isMicOn: currentUser.isMicOn,
+        isCameraOn: currentUser.isCameraOn,
+      });
+    }
+  }, [currentUser.x, currentUser.y, currentUser.isMicOn, currentUser.isCameraOn, session?.user?.id]);
 
   if (!activeWorkspace) return null;
 
