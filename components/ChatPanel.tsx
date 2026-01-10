@@ -446,7 +446,45 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
           <div className="h-px bg-white/5 mx-4 my-2" />
 
-          {/* Mensajes Directos / Personas */}
+          {/* Mensajes Directos */}
+          <div className="px-2 py-4">
+            <div className="px-3 mb-2">
+              <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ${theme === 'arcade' ? 'text-[#00ff41]' : ''}`}>Mensajes Directos</h3>
+            </div>
+            <div className="space-y-0.5">
+              {grupos.filter(g => g.tipo === 'directo').map(g => {
+                const unreadCount = unreadByChannel[g.id] || 0;
+                // Obtener el nombre del otro usuario del DM
+                const otherUserId = g.nombre.split('|').find((id: string) => id !== currentUser.id);
+                const otherUser = miembrosEspacio.find((m: any) => m.id === otherUserId);
+                const isOnline = onlineUsers.some(ou => ou.id === otherUserId);
+                return (
+                <button 
+                  key={g.id} 
+                  onClick={() => handleChannelSelect(g.id)} 
+                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-3 ${grupoActivo === g.id ? s.activeItem : (unreadCount > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100 hover:bg-white/5')}`}
+                >
+                  <div className="relative">
+                    <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{otherUser?.nombre?.charAt(0) || '?'}</div>
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`} />
+                  </div>
+                  <span className="truncate flex-1">{otherUser?.nombre || 'Usuario'}</span>
+                  {unreadCount > 0 && (
+                    <span className="w-5 h-5 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center animate-pulse">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+              );})}
+              {grupos.filter(g => g.tipo === 'directo').length === 0 && (
+                <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">Sin mensajes directos</p>
+              )}
+            </div>
+          </div>
+
+          <div className="h-px bg-white/5 mx-4 my-2" />
+
+          {/* Personas */}
           <div className="px-2 py-4">
             <div className="px-3 mb-2">
               <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ${theme === 'arcade' ? 'text-[#00ff41]' : ''}`}>Personas</h3>
@@ -454,23 +492,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
             <div className="space-y-0.5">
               {miembrosEspacio.filter((u: any) => u.id !== currentUser.id).length > 0 ? miembrosEspacio.filter((u: any) => u.id !== currentUser.id).map((u: any) => {
                 const isOnline = onlineUsers.some(ou => ou.id === u.id);
-                const dmUnread = grupos.filter(g => g.tipo === 'directo' && g.nombre.includes(u.id)).reduce((acc, g) => acc + (unreadByChannel[g.id] || 0), 0);
                 return (
                 <button 
                   key={u.id} 
                   onClick={() => { console.log('Opening DM with:', u); openDirectChat(u); }}
-                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer ${dmUnread > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100'}`}
+                  className="w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer opacity-50 hover:opacity-100"
                 >
                   <div className="relative">
                     <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.nombre?.charAt(0)}</div>
                     <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`} />
                   </div>
                   <span className="truncate flex-1">{u.nombre}</span>
-                  {dmUnread > 0 && (
-                    <span className="w-5 h-5 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center animate-pulse">
-                      {dmUnread > 9 ? '9+' : dmUnread}
-                    </span>
-                  )}
                 </button>
               );}) : (
                  <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">No hay otros miembros</p>
