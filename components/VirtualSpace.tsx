@@ -712,39 +712,49 @@ export const VirtualSpace: React.FC = () => {
 
   // Sincronizar avatares remotos con Phaser
   useEffect(() => {
-    if (!gameRef.current) return;
-    const scene = gameRef.current.scene.getScene('CoworkScene') as any;
-    if (!scene || !scene.remotePlayers) return;
+    const syncAvatars = () => {
+      if (!gameRef.current) return false;
+      const scene = gameRef.current.scene.getScene('CoworkScene') as any;
+      if (!scene || !scene.remotePlayers) return false;
 
-    // Actualizar o crear avatares remotos
-    onlineUsers.forEach(user => {
-      const existing = scene.remotePlayers.get(user.id);
-      if (existing) {
-        // Detener tweens anteriores para evitar acumulación
-        scene.tweens.killTweensOf(existing);
-        // Interpolación más suave y larga para movimiento fluido
-        scene.tweens.add({
-          targets: existing,
-          x: user.x,
-          y: user.y,
-          duration: 150,
-          ease: 'Sine.easeOut'
-        });
-      } else {
-        // Crear nuevo avatar remoto
-        const texKey = `remote-${user.id}`;
-        scene.generatePixelAvatar(texKey, user.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' });
-        scene.createRemotePlayer({ ...user, name: user.name }, texKey);
-      }
-    });
+      // Actualizar o crear avatares remotos
+      onlineUsers.forEach(user => {
+        const existing = scene.remotePlayers.get(user.id);
+        if (existing) {
+          // Detener tweens anteriores para evitar acumulación
+          scene.tweens.killTweensOf(existing);
+          // Interpolación más suave y larga para movimiento fluido
+          scene.tweens.add({
+            targets: existing,
+            x: user.x,
+            y: user.y,
+            duration: 150,
+            ease: 'Sine.easeOut'
+          });
+        } else {
+          // Crear nuevo avatar remoto
+          const texKey = `remote-${user.id}`;
+          scene.generatePixelAvatar(texKey, user.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' });
+          scene.createRemotePlayer({ ...user, name: user.name }, texKey);
+        }
+      });
 
-    // Eliminar avatares de usuarios que ya no están
-    scene.remotePlayers.forEach((container: any, odId: string) => {
-      if (!onlineUsers.find(u => u.id === odId)) {
-        container.destroy();
-        scene.remotePlayers.delete(odId);
-      }
-    });
+      // Eliminar avatares de usuarios que ya no están
+      scene.remotePlayers.forEach((container: any, odId: string) => {
+        if (!onlineUsers.find(u => u.id === odId)) {
+          container.destroy();
+          scene.remotePlayers.delete(odId);
+        }
+      });
+      return true;
+    };
+
+    // Intentar sincronizar inmediatamente
+    if (!syncAvatars()) {
+      // Si falla, reintentar después de que Phaser esté listo
+      const retryTimer = setTimeout(syncAvatars, 200);
+      return () => clearTimeout(retryTimer);
+    }
   }, [onlineUsers]);
 
   return (
