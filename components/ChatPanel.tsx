@@ -97,24 +97,42 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     };
     cargarMensajes();
 
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
-    channelRef.current = supabase.channel(`chat_realtime_${grupoActivo}`)
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+    
+    const channel = supabase.channel(`chat_realtime_${grupoActivo}_${Date.now()}`)
       .on('postgres_changes', { 
         event: 'INSERT', 
         schema: 'public', 
         table: 'mensajes_chat', 
         filter: `grupo_id=eq.${grupoActivo}` 
       }, async (payload) => {
-        console.log('Nuevo mensaje recibido:', payload);
-        const { data: userData } = await supabase.from('usuarios').select('id, nombre').eq('id', payload.new.usuario_id).single();
-        const nuevoMsg = { ...payload.new, usuario: userData || { id: payload.new.usuario_id, nombre: 'Usuario' } } as unknown as ChatMessage;
-        setMensajes(prev => [...prev, nuevoMsg]);
-        scrollToBottom();
+        console.log('Nuevo mensaje recibido:', payload.new);
+        // Recargar todos los mensajes para asegurar consistencia
+        const { data } = await supabase
+          .from('mensajes_chat')
+          .select(`id, contenido, creado_en, usuario_id, tipo, usuario:usuarios!mensajes_chat_usuario_id_fkey(id, nombre)`)
+          .eq('grupo_id', grupoActivo)
+          .order('creado_en', { ascending: true });
+        
+        if (data) {
+          setMensajes(data as any);
+          scrollToBottom();
+        }
       }).subscribe((status) => {
         console.log('Chat realtime status:', status);
       });
+    
+    channelRef.current = channel;
 
-    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+    return () => { 
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
   }, [grupoActivo]);
 
   const scrollToBottom = () => {
