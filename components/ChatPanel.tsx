@@ -433,7 +433,36 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
                       </span>
                     </div>
                   )}
-                  <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{m.contenido}</p>
+                  {m.tipo === 'archivo' && m.contenido.includes('](') ? (() => {
+                    const match = m.contenido.match(/📎 \[(.+?)\]\((.+?)\)/);
+                    if (match) {
+                      const [, fileName, fileUrl] = match;
+                      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+                      return (
+                        <div className="mt-1">
+                          {isImage ? (
+                            <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="block">
+                              <img src={fileUrl} alt={fileName} className="max-w-[300px] max-h-[200px] rounded-lg border border-white/10 hover:border-indigo-500/50 transition-colors cursor-pointer" />
+                              <span className="text-[11px] opacity-50 mt-1 block">{fileName}</span>
+                            </a>
+                          ) : (
+                            <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 hover:border-indigo-500/50 hover:bg-white/10 transition-all group max-w-[300px]">
+                              <div className="w-10 h-10 rounded-lg bg-indigo-600/20 flex items-center justify-center shrink-0">
+                                <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[13px] font-medium truncate group-hover:text-indigo-400 transition-colors">{fileName}</p>
+                                <p className="text-[10px] opacity-40">Clic para descargar</p>
+                              </div>
+                            </a>
+                          )}
+                        </div>
+                      );
+                    }
+                    return <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{m.contenido}</p>;
+                  })() : (
+                    <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{m.contenido}</p>
+                  )}
                 </div>
               </div>
             </div>
