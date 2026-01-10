@@ -4,6 +4,7 @@ import { ChatGroup, ChatMessage, User } from '../types';
 import { useStore } from '../store/useStore';
 import { ModalCrearGrupo } from './chat/ModalCrearGrupo';
 import { AgregarMiembros } from './chat/AgregarMiembros';
+import { ChatToast, ToastNotification } from './ChatToast';
 
 interface ChatPanelProps {
   sidebarOnly?: boolean;
@@ -24,6 +25,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const [unreadByChannel, setUnreadByChannel] = useState<Record<string, number>>({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
+  const [directChats, setDirectChats] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const mensajesRef = useRef<HTMLDivElement>(null);
@@ -120,11 +123,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         // Incrementar contador si el mensaje no es nuestro
         if (payload.new.usuario_id !== currentUser.id) {
           incrementUnreadChat();
-          // Incrementar contador por canal si no estamos viendo ese canal
+          // Incrementar contador por canal
           setUnreadByChannel(prev => ({
             ...prev,
             [payload.new.grupo_id]: (prev[payload.new.grupo_id] || 0) + 1
           }));
+          
+          // Obtener info del usuario para el toast
+          const { data: senderData } = await supabase
+            .from('usuarios')
+            .select('nombre')
+            .eq('id', payload.new.usuario_id)
+            .single();
+          
+          const grupo = grupos.find(g => g.id === payload.new.grupo_id);
+          const isDirect = grupo?.tipo === 'directo';
+          const channelName = isDirect ? undefined : grupo?.nombre;
+          
+          // Mostrar toast notification
+          if (senderData) {
+            addToastNotification(
+              senderData.nombre,
+              payload.new.contenido,
+              payload.new.grupo_id,
+              channelName,
+              isDirect
+            );
+          }
         }
         
         // Recargar todos los mensajes para asegurar consistencia
@@ -208,6 +233,67 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     setUnreadByChannel(prev => ({ ...prev, [id]: 0 })); // Limpiar no leídos del canal
     setActiveSubTab('chat' as any);
     if (onChannelSelect) onChannelSelect();
+  };
+
+  // Crear o abrir chat directo con un miembro
+  const openDirectChat = async (targetUser: any) => {
+    if (!activeWorkspace || !currentUser.id || targetUser.id === currentUser.id) return;
+    
+    // Buscar si ya existe un chat directo entre estos dos usuarios
+    const { data: existingChats } = await supabase
+      .from('grupos_chat')
+      .select('*')
+      .eq('espacio_id', activeWorkspace.id)
+      .eq('tipo', 'directo');
+    
+    // Buscar chat directo que incluya ambos usuarios
+    let directChat = existingChats?.find(chat => {
+      const participants = chat.nombre.split('|');
+      return participants.includes(currentUser.id) && participants.includes(targetUser.id);
+    });
+
+    if (!directChat) {
+      // Crear nuevo chat directo
+      const { data, error } = await supabase
+        .from('grupos_chat')
+        .insert({
+          espacio_id: activeWorkspace.id,
+          nombre: `${currentUser.id}|${targetUser.id}`,
+          tipo: 'directo',
+          creado_por: currentUser.id,
+          icono: '💬'
+        })
+        .select()
+        .single();
+      
+      if (!error && data) {
+        directChat = data;
+        setDirectChats(prev => [...prev, { ...data, targetUser }]);
+      }
+    }
+
+    if (directChat) {
+      handleChannelSelect(directChat.id);
+    }
+  };
+
+  // Agregar toast notification
+  const addToastNotification = (userName: string, message: string, groupId: string, channelName?: string, isDirect?: boolean) => {
+    const newToast: ToastNotification = {
+      id: `toast_${Date.now()}`,
+      userName,
+      userInitial: userName.charAt(0).toUpperCase(),
+      message,
+      channelName,
+      isDirect,
+      groupId,
+      timestamp: new Date()
+    };
+    setToastNotifications(prev => [...prev.slice(-4), newToast]); // Max 5 toasts
+  };
+
+  const dismissToast = (id: string) => {
+    setToastNotifications(prev => prev.filter(t => t.id !== id));
   };
 
   // Manejar archivo adjunto
@@ -315,7 +401,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
               </button>
             </div>
             <div className="space-y-0.5">
-              {grupos.map(g => {
+              {grupos.filter(g => g.tipo !== 'directo').map(g => {
                 const unreadCount = unreadByChannel[g.id] || 0;
                 return (
                 <button 
@@ -345,13 +431,23 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
             <div className="space-y-0.5">
               {miembrosEspacio.length > 0 ? miembrosEspacio.map((u: any) => {
                 const isOnline = onlineUsers.some(ou => ou.id === u.id);
+                const dmUnread = grupos.filter(g => g.tipo === 'directo' && g.nombre.includes(u.id)).reduce((acc, g) => acc + (unreadByChannel[g.id] || 0), 0);
                 return (
-                <button key={u.id} className="w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 truncate opacity-50 hover:opacity-100">
+                <button 
+                  key={u.id} 
+                  onClick={() => openDirectChat(u)}
+                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 ${dmUnread > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100'}`}
+                >
                   <div className="relative">
                     <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.nombre?.charAt(0)}</div>
                     <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`} />
                   </div>
-                  <span className="truncate">{u.nombre}</span>
+                  <span className="truncate flex-1">{u.nombre}</span>
+                  {dmUnread > 0 && (
+                    <span className="w-5 h-5 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center animate-pulse">
+                      {dmUnread > 9 ? '9+' : dmUnread}
+                    </span>
+                  )}
                 </button>
               );}) : (
                  <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">No hay otros miembros</p>
@@ -372,6 +468,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
           const { data, error } = await supabase.from('grupos_chat').insert({ espacio_id: activeWorkspace!.id, nombre: n, tipo: t, creado_por: currentUser.id, icono: '#' }).select().single();
           if (!error && data) { setGrupos(prev => [...prev, data]); handleChannelSelect(data.id); setShowCreateModal(false); }
         }} />}
+        
+        {/* Toast Notifications */}
+        <ChatToast 
+          notifications={toastNotifications}
+          onDismiss={dismissToast}
+          onOpen={handleChannelSelect}
+          theme={theme}
+        />
       </div>
     );
   }
@@ -380,10 +484,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     <div className={`h-full flex flex-col transition-all duration-500 overflow-hidden ${s.chatBg}`}>
       <div className={`px-8 py-5 border-b border-white/5 flex items-center justify-between shrink-0 shadow-sm`}>
          <div className="flex items-center gap-4">
-            <span className={`text-2xl opacity-40 ${theme === 'arcade' ? 'text-[#00ff41]' : ''}`}>{grupoActivoData?.tipo === 'privado' ? '🔒' : '#'}</span>
+            <span className={`text-2xl opacity-40 ${theme === 'arcade' ? 'text-[#00ff41]' : ''}`}>
+              {grupoActivoData?.tipo === 'directo' ? '💬' : (grupoActivoData?.tipo === 'privado' ? '🔒' : '#')}
+            </span>
             <div>
-              <h3 className={`font-black text-sm uppercase tracking-widest truncate ${theme === 'arcade' ? 'text-[#00ff41] neon-text' : ''}`}>{grupoActivoData?.nombre || 'General'}</h3>
-              <p className="text-[9px] font-bold opacity-30 uppercase tracking-tighter">Espacio de colaboración abierta</p>
+              <h3 className={`font-black text-sm uppercase tracking-widest truncate ${theme === 'arcade' ? 'text-[#00ff41] neon-text' : ''}`}>
+                {grupoActivoData?.tipo === 'directo' 
+                  ? miembrosEspacio.find(m => grupoActivoData?.nombre.includes(m.id) && m.id !== currentUser.id)?.nombre || 'Chat Directo'
+                  : (grupoActivoData?.nombre || 'General')
+                }
+              </h3>
+              <p className="text-[9px] font-bold opacity-30 uppercase tracking-tighter">
+                {grupoActivoData?.tipo === 'directo' ? 'Mensaje directo' : 'Espacio de colaboración abierta'}
+              </p>
             </div>
          </div>
          {/* BOTÓN DE AÑADIR MIEMBROS REPARADO Y MEJORADO */}
