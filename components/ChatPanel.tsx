@@ -34,6 +34,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const channelRef = useRef<any>(null);
   const typingChannelRef = useRef<any>(null);
   const typingTimeoutRef = useRef<any>(null);
+  const globalNotifChannelRef = useRef<any>(null);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -93,6 +94,65 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     };
     cargarMiembros();
   }, [activeWorkspace]);
+
+  // Suscripción global para toast notifications (todos los canales)
+  useEffect(() => {
+    if (!activeWorkspace || !currentUser.id) return;
+    
+    if (globalNotifChannelRef.current) {
+      supabase.removeChannel(globalNotifChannelRef.current);
+    }
+
+    const globalChannel = supabase.channel(`global_notif_${activeWorkspace.id}_${currentUser.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'mensajes_chat'
+      }, async (payload) => {
+        // No notificar mis propios mensajes
+        if (payload.new.usuario_id === currentUser.id) return;
+        
+        // Obtener info del usuario
+        const { data: senderData } = await supabase
+          .from('usuarios')
+          .select('nombre')
+          .eq('id', payload.new.usuario_id)
+          .single();
+        
+        // Obtener info del grupo
+        const { data: grupoData } = await supabase
+          .from('grupos_chat')
+          .select('nombre, tipo, espacio_id')
+          .eq('id', payload.new.grupo_id)
+          .single();
+        
+        // Solo notificar si es del mismo espacio
+        if (grupoData?.espacio_id !== activeWorkspace.id) return;
+        
+        if (senderData) {
+          console.log('Showing toast for:', senderData.nombre, payload.new.contenido);
+          const isDirect = grupoData?.tipo === 'directo';
+          addToastNotification(
+            senderData.nombre,
+            payload.new.contenido,
+            payload.new.grupo_id,
+            isDirect ? undefined : grupoData?.nombre,
+            isDirect
+          );
+        }
+      }).subscribe((status) => {
+        console.log('Global notification channel:', status);
+      });
+
+    globalNotifChannelRef.current = globalChannel;
+
+    return () => {
+      if (globalNotifChannelRef.current) {
+        supabase.removeChannel(globalNotifChannelRef.current);
+        globalNotifChannelRef.current = null;
+      }
+    };
+  }, [activeWorkspace?.id, currentUser.id]);
 
   useEffect(() => {
     if (!grupoActivo) return;
@@ -305,6 +365,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
   // Agregar toast notification
   const addToastNotification = (userName: string, message: string, groupId: string, channelName?: string, isDirect?: boolean) => {
+    console.log('Adding toast notification:', userName, message);
     const newToast: ToastNotification = {
       id: `toast_${Date.now()}`,
       userName,
@@ -315,7 +376,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       groupId,
       timestamp: new Date()
     };
-    setToastNotifications(prev => [...prev.slice(-4), newToast]); // Max 5 toasts
+    setToastNotifications(prev => {
+      console.log('Toast notifications count:', prev.length + 1);
+      return [...prev.slice(-4), newToast];
+    });
   };
 
   const dismissToast = (id: string) => {
