@@ -92,7 +92,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     const cargarMensajes = async () => {
       const { data, error } = await supabase
         .from('mensajes_chat')
-        .select(`id, contenido, creado_en, usuario_id, tipo, usuario:usuarios(id, nombre)`)
+        .select(`id, contenido, creado_en, usuario_id, tipo, usuario:usuarios!mensajes_chat_usuario_id_fkey(id, nombre)`)
         .eq('grupo_id', grupoActivo)
         .order('creado_en', { ascending: true });
       
