@@ -105,11 +105,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         table: 'mensajes_chat', 
         filter: `grupo_id=eq.${grupoActivo}` 
       }, async (payload) => {
+        console.log('Nuevo mensaje recibido:', payload);
         const { data: userData } = await supabase.from('usuarios').select('id, nombre').eq('id', payload.new.usuario_id).single();
         const nuevoMsg = { ...payload.new, usuario: userData || { id: payload.new.usuario_id, nombre: 'Usuario' } } as unknown as ChatMessage;
         setMensajes(prev => [...prev, nuevoMsg]);
         scrollToBottom();
-      }).subscribe();
+      }).subscribe((status) => {
+        console.log('Chat realtime status:', status);
+      });
 
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
   }, [grupoActivo]);
