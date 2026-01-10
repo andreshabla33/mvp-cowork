@@ -346,90 +346,66 @@ export const VirtualSpace: React.FC = () => {
   const currentUserRef = useRef(currentUser);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
-  // Realtime Presence
+  // Realtime Presence - Solo escuchar el canal existente (creado en WorkspaceLayout)
   useEffect(() => {
     if (!activeWorkspace?.id || !session?.user?.id) return;
 
     const roomName = `workspace:${activeWorkspace.id}`;
-    const channel = supabase.channel(roomName, {
-      config: { presence: { key: session.user.id } }
-    });
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const users: User[] = [];
-        Object.keys(state).forEach(key => {
-          const presences = state[key] as any[];
-          presences.forEach(presence => {
-            if (presence.user_id !== session.user.id) {
-              users.push({
-                id: presence.user_id,
-                name: presence.name || 'Usuario',
-                role: presence.role || Role.MIEMBRO,
-                avatar: '',
-                avatarConfig: presence.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' },
-                x: presence.x || 500,
-                y: presence.y || 500,
-                direction: presence.direction || 'front',
-                isOnline: true,
-                isMicOn: presence.isMicOn || false,
-                isCameraOn: presence.isCameraOn || false,
-                isScreenSharing: false,
-                isPrivate: false,
-                status: PresenceStatus.AVAILABLE,
-              });
-            }
-          });
-        });
-        setOnlineUsers(users);
-      })
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        console.log('Usuario conectado:', key, newPresences);
-        addNotification(`${newPresences[0]?.name || 'Alguien'} se conectó`, 'entry');
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        console.log('Usuario desconectado:', key);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: session.user.id,
-            name: currentUser.name,
-            role: currentUser.role,
-            avatarConfig: currentUser.avatarConfig,
-            x: currentUser.x,
-            y: currentUser.y,
-            direction: currentUser.direction,
-            isMicOn: currentUser.isMicOn,
-            isCameraOn: currentUser.isCameraOn,
-          });
-        }
+    // Obtener canal existente o crear uno nuevo solo para escuchar
+    const existingChannels = supabase.getChannels();
+    let channel = existingChannels.find(c => c.topic === `realtime:${roomName}`);
+    
+    if (!channel) {
+      channel = supabase.channel(roomName, {
+        config: { presence: { key: session.user.id } }
       });
+    }
+
+    const syncHandler = () => {
+      const state = channel!.presenceState();
+      const users: User[] = [];
+      Object.keys(state).forEach(key => {
+        const presences = state[key] as any[];
+        presences.forEach(presence => {
+          if (presence.user_id !== session.user.id) {
+            users.push({
+              id: presence.user_id,
+              name: presence.name || 'Usuario',
+              role: presence.role || Role.MIEMBRO,
+              avatar: '',
+              avatarConfig: presence.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' },
+              x: presence.x || 500,
+              y: presence.y || 500,
+              direction: presence.direction || 'front',
+              isOnline: true,
+              isMicOn: presence.isMicOn || false,
+              isCameraOn: presence.isCameraOn || false,
+              isScreenSharing: false,
+              isPrivate: false,
+              status: PresenceStatus.AVAILABLE,
+            });
+          }
+        });
+      });
+      setOnlineUsers(users);
+    };
+
+    channel.on('presence', { event: 'sync' }, syncHandler);
+    
+    // Solo suscribir si no está ya suscrito
+    if (channel.state !== 'joined') {
+      channel.subscribe();
+    } else {
+      // Si ya está suscrito, sincronizar inmediatamente
+      syncHandler();
+    }
 
     channelRef.current = channel;
 
     return () => {
-      supabase.removeChannel(channel);
+      // No remover el canal aquí, se maneja en WorkspaceLayout
     };
   }, [activeWorkspace?.id, session?.user?.id]);
-
-  // Actualizar presencia cuando cambia la posición
-  useEffect(() => {
-    if (channelRef.current && session?.user?.id) {
-      channelRef.current.track({
-        user_id: session.user.id,
-        name: currentUser.name,
-        role: currentUser.role,
-        avatarConfig: currentUser.avatarConfig,
-        x: currentUser.x,
-        y: currentUser.y,
-        direction: currentUser.direction,
-        isMicOn: currentUser.isMicOn,
-        isCameraOn: currentUser.isCameraOn,
-      });
-    }
-  }, [currentUser.x, currentUser.y, currentUser.isMicOn, currentUser.isCameraOn]);
 
   // WebRTC Signaling
   const createPeerConnection = useCallback((peerId: string, isInitiator: boolean) => {
@@ -760,7 +736,10 @@ export const VirtualSpace: React.FC = () => {
           if (this.textures.exists(key)) this.textures.remove(key);
           this.textures.addSpriteSheet(key, canvas, { frameWidth: 64, frameHeight: 64 });
           ['down', 'left', 'right', 'up'].forEach((dir, i) => { 
-            this.anims.create({ key: `${key}-${dir}`, frames: this.anims.generateFrameNumbers(key, { start: i * 4, end: i * 4 + 3 }), frameRate: 8, repeat: -1 }); 
+            const animKey = `${key}-${dir}`;
+            if (!this.anims.exists(animKey)) {
+              this.anims.create({ key: animKey, frames: this.anims.generateFrameNumbers(key, { start: i * 4, end: i * 4 + 3 }), frameRate: 8, repeat: -1 }); 
+            }
           });
         }
         createRemotePlayer(u: User, tex: string) {
