@@ -13,9 +13,10 @@ interface ChatPanelProps {
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatOnly = false, onChannelSelect }) => {
-  const { activeWorkspace, currentUser, setActiveSubTab, theme, onlineUsers, incrementUnreadChat, activeSubTab } = useStore();
+  const { activeWorkspace, currentUser, setActiveSubTab, theme, onlineUsers, incrementUnreadChat, activeSubTab, activeChatGroupId, setActiveChatGroupId } = useStore();
   const [grupos, setGrupos] = useState<ChatGroup[]>([]);
-  const [grupoActivo, setGrupoActivo] = useState<string | null>(null);
+  const grupoActivo = activeChatGroupId;
+  const setGrupoActivo = setActiveChatGroupId;
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
   const [nuevoMensaje, setNuevoMensaje] = useState('');
   const [loading, setLoading] = useState(true);
@@ -95,6 +96,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
   useEffect(() => {
     if (!grupoActivo) return;
+    console.log('Loading messages for grupo:', grupoActivo);
     const cargarMensajes = async () => {
       const { data, error } = await supabase
         .from('mensajes_chat')
@@ -102,6 +104,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         .eq('grupo_id', grupoActivo)
         .order('creado_en', { ascending: true });
       
+      console.log('Messages loaded:', data?.length, 'for grupo:', grupoActivo);
       if (!error && data) { 
         setMensajes(data as any); 
         scrollToBottom(); 
