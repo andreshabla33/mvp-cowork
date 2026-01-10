@@ -237,7 +237,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
   // Crear o abrir chat directo con un miembro
   const openDirectChat = async (targetUser: any) => {
-    if (!activeWorkspace || !currentUser.id || targetUser.id === currentUser.id) return;
+    console.log('openDirectChat called with:', targetUser, 'currentUser:', currentUser.id);
+    if (!activeWorkspace || !currentUser.id) {
+      console.log('Missing workspace or currentUser');
+      return;
+    }
+    if (targetUser.id === currentUser.id) {
+      console.log('Cannot DM yourself');
+      return;
+    }
     
     // Buscar si ya existe un chat directo entre estos dos usuarios
     const { data: existingChats } = await supabase
@@ -253,6 +261,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     });
 
     if (!directChat) {
+      console.log('Creating new direct chat...');
       // Crear nuevo chat directo
       const { data, error } = await supabase
         .from('grupos_chat')
@@ -266,13 +275,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         .select()
         .single();
       
+      console.log('Create result:', data, error);
       if (!error && data) {
         directChat = data;
-        setDirectChats(prev => [...prev, { ...data, targetUser }]);
+        setGrupos(prev => [...prev, data]); // Agregar a la lista de grupos
       }
+    } else {
+      console.log('Found existing chat:', directChat);
     }
 
     if (directChat) {
+      console.log('Selecting chat:', directChat.id);
       handleChannelSelect(directChat.id);
     }
   };
@@ -429,14 +442,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
               <h3 className={`text-[10px] font-black uppercase tracking-[0.2em] opacity-40 ${theme === 'arcade' ? 'text-[#00ff41]' : ''}`}>Personas</h3>
             </div>
             <div className="space-y-0.5">
-              {miembrosEspacio.length > 0 ? miembrosEspacio.map((u: any) => {
+              {miembrosEspacio.filter((u: any) => u.id !== currentUser.id).length > 0 ? miembrosEspacio.filter((u: any) => u.id !== currentUser.id).map((u: any) => {
                 const isOnline = onlineUsers.some(ou => ou.id === u.id);
                 const dmUnread = grupos.filter(g => g.tipo === 'directo' && g.nombre.includes(u.id)).reduce((acc, g) => acc + (unreadByChannel[g.id] || 0), 0);
                 return (
                 <button 
                   key={u.id} 
-                  onClick={() => openDirectChat(u)}
-                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 ${dmUnread > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100'}`}
+                  onClick={() => { console.log('Opening DM with:', u); openDirectChat(u); }}
+                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer ${dmUnread > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100'}`}
                 >
                   <div className="relative">
                     <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.nombre?.charAt(0)}</div>
