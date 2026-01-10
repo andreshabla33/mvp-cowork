@@ -92,7 +92,45 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       }
     };
     cargarMiembros();
-  }, [activeWorkspace]);
+
+    // Suscripción global para toast notifications de TODOS los canales
+    const globalChannel = supabase.channel(`global_chat_${activeWorkspace.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'mensajes_chat'
+      }, async (payload) => {
+        // Verificar que el mensaje es de un grupo de este espacio
+        const grupo = grupos.find(g => g.id === payload.new.grupo_id);
+        if (!grupo) return;
+        
+        // No notificar si es mi propio mensaje o si estoy viendo ese canal
+        if (payload.new.usuario_id === currentUser.id) return;
+        if (payload.new.grupo_id === grupoActivo) return;
+        
+        // Obtener info del usuario
+        const { data: senderData } = await supabase
+          .from('usuarios')
+          .select('nombre')
+          .eq('id', payload.new.usuario_id)
+          .single();
+        
+        if (senderData) {
+          const isDirect = grupo.tipo === 'directo';
+          addToastNotification(
+            senderData.nombre,
+            payload.new.contenido,
+            payload.new.grupo_id,
+            isDirect ? undefined : grupo.nombre,
+            isDirect
+          );
+        }
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(globalChannel);
+    };
+  }, [activeWorkspace, grupos, grupoActivo]);
 
   useEffect(() => {
     if (!grupoActivo) return;
@@ -697,6 +735,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         </form>
       </div>
       {showAddMembers && grupoActivo && <AgregarMiembros grupoId={grupoActivo} espacioId={activeWorkspace!.id} onClose={() => setShowAddMembers(false)} />}
+      
+      {/* Toast Notifications */}
+      <ChatToast 
+        notifications={toastNotifications}
+        onDismiss={dismissToast}
+        onOpen={(groupId) => { setGrupoActivo(groupId); }}
+        theme={theme}
+      />
     </div>
   );
 };
