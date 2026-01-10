@@ -28,7 +28,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [toastNotifications, setToastNotifications] = useState<ToastNotification[]>([]);
   const [directChats, setDirectChats] = useState<any[]>([]);
+  const [showMentionPicker, setShowMentionPicker] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [mentionCursorPos, setMentionCursorPos] = useState(0);
+  const [activeThread, setActiveThread] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   
   const mensajesRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
@@ -151,15 +157,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
           .single();
         
         if (senderData) {
-          console.log('🔔 Toast notification:', senderData.nombre, payload.new.contenido);
           const isDirect = grupoData?.tipo === 'directo';
+          const menciones = payload.new.menciones || [];
+          const isMentioned = menciones.includes(currentUser.id);
+          
+          console.log('🔔 Toast notification:', senderData.nombre, payload.new.contenido, isMentioned ? '(MENCIONADO)' : '');
           
           // Reproducir sonido de notificación
           playNotificationSound();
           
           addToastNotification(
             senderData.nombre,
-            payload.new.contenido,
+            isMentioned ? `📢 Te mencionó: ${payload.new.contenido}` : payload.new.contenido,
             payload.new.grupo_id,
             isDirect ? undefined : grupoData?.nombre,
             isDirect
@@ -278,13 +287,111 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   // Emojis comunes
   const emojis = ['😀', '😂', '🥰', '😎', '🤔', '👍', '👎', '❤️', '🔥', '🎉', '✅', '💯', '🚀', '💡', '⭐'];
 
+  // Detectar menciones en el texto (@usuario)
+  const detectMentions = (text: string): string[] => {
+    const mentionRegex = /@(\w+)/g;
+    const mentions: string[] = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      const userName = match[1].toLowerCase();
+      const user = miembrosEspacio.find(m => m.nombre?.toLowerCase().includes(userName));
+      if (user) mentions.push(user.id);
+    }
+    return [...new Set(mentions)];
+  };
+
+  // Manejar input con detección de @
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    const cursorPos = e.target.selectionStart || 0;
+    setNuevoMensaje(value);
+    
+    // Detectar si estamos escribiendo una mención
+    const textBeforeCursor = value.substring(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+    
+    if (atMatch) {
+      setShowMentionPicker(true);
+      setMentionFilter(atMatch[1].toLowerCase());
+      setMentionCursorPos(cursorPos - atMatch[0].length);
+    } else {
+      setShowMentionPicker(false);
+    }
+    
+    handleTyping();
+  };
+
+  // Insertar mención seleccionada
+  const insertMention = (user: any) => {
+    const beforeMention = nuevoMensaje.substring(0, mentionCursorPos);
+    const afterMention = nuevoMensaje.substring(mentionCursorPos).replace(/@\w*/, '');
+    const newText = `${beforeMention}@${user.nombre} ${afterMention}`;
+    setNuevoMensaje(newText);
+    setShowMentionPicker(false);
+    inputRef.current?.focus();
+  };
+
+  // Usuarios filtrados para el picker de menciones
+  const filteredMentionUsers = miembrosEspacio.filter(u => 
+    u.id !== currentUser.id && 
+    u.nombre?.toLowerCase().includes(mentionFilter)
+  );
+
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nuevoMensaje.trim() || !grupoActivo || !currentUser.id) return;
     const content = nuevoMensaje.trim();
-    setNuevoMensaje(''); 
-    const { error } = await supabase.from('mensajes_chat').insert({ grupo_id: grupoActivo, usuario_id: currentUser.id, contenido: content, tipo: 'texto' });
+    const menciones = detectMentions(content);
+    setNuevoMensaje('');
+    setShowMentionPicker(false);
+    
+    const messageData: any = { 
+      grupo_id: activeThread || grupoActivo, 
+      usuario_id: currentUser.id, 
+      contenido: content, 
+      tipo: 'texto',
+      menciones: menciones.length > 0 ? menciones : null,
+      respuesta_a: activeThread ? activeThread : null
+    };
+    
+    const { error } = await supabase.from('mensajes_chat').insert(messageData);
     if (error) setNuevoMensaje(content);
+  };
+
+  // Abrir hilo de un mensaje
+  const openThread = async (messageId: string) => {
+    setActiveThread(messageId);
+    const { data } = await supabase
+      .from('mensajes_chat')
+      .select(`id, contenido, creado_en, usuario_id, tipo, menciones, usuario:usuarios!mensajes_chat_usuario_id_fkey(id, nombre)`)
+      .or(`id.eq.${messageId},respuesta_a.eq.${messageId}`)
+      .order('creado_en', { ascending: true });
+    if (data) setThreadMessages(data as any);
+  };
+
+  // Cerrar hilo
+  const closeThread = () => {
+    setActiveThread(null);
+    setThreadMessages([]);
+  };
+
+  // Renderizar contenido con menciones resaltadas
+  const renderMessageContent = (content: string) => {
+    const parts = content.split(/(@\w+)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('@')) {
+        const userName = part.substring(1).toLowerCase();
+        const isMentioningMe = miembrosEspacio.find(m => 
+          m.nombre?.toLowerCase() === userName && m.id === currentUser.id
+        );
+        return (
+          <span key={i} className={`px-1 rounded ${isMentioningMe ? 'bg-yellow-500/30 text-yellow-300 font-bold' : 'bg-indigo-500/30 text-indigo-300'}`}>
+            {part}
+          </span>
+        );
+      }
+      return part;
+    });
   };
 
   const handleChannelSelect = (id: string) => {
@@ -687,10 +794,19 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
                         </div>
                       );
                     }
-                    return <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{m.contenido}</p>;
+                    return <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{renderMessageContent(m.contenido)}</p>;
                   })() : (
-                    <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{m.contenido}</p>
+                    <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{renderMessageContent(m.contenido)}</p>
                   )}
+                  
+                  {/* Botón de hilo */}
+                  <button 
+                    onClick={() => openThread(m.id)}
+                    className="mt-2 flex items-center gap-1 text-[10px] opacity-40 hover:opacity-100 transition-opacity"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                    <span>Responder en hilo</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -711,6 +827,37 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
           </div>
         )}
         
+        {/* Mention picker */}
+        {showMentionPicker && filteredMentionUsers.length > 0 && (
+          <div className="mb-2 p-2 rounded-xl bg-black/80 border border-indigo-500/30 backdrop-blur-xl max-h-40 overflow-y-auto">
+            <p className="text-[9px] uppercase tracking-widest opacity-40 px-2 mb-2">Mencionar a</p>
+            {filteredMentionUsers.map(user => (
+              <button
+                key={user.id}
+                type="button"
+                onClick={() => insertMention(user)}
+                className="w-full text-left px-3 py-2 rounded-lg hover:bg-indigo-500/20 transition-colors flex items-center gap-3"
+              >
+                <div className="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center text-[10px] font-bold">
+                  {user.nombre?.charAt(0)}
+                </div>
+                <span className="text-[13px] font-medium">@{user.nombre}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Indicador de hilo activo */}
+        {activeThread && (
+          <div className="mb-2 p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+              <span className="text-[12px] text-indigo-300">Respondiendo en hilo</span>
+            </div>
+            <button onClick={closeThread} className="text-[10px] opacity-60 hover:opacity-100">✕ Cerrar</button>
+          </div>
+        )}
+
         {/* Emoji picker */}
         {showEmojiPicker && (
           <div className="mb-2 p-2 rounded-xl bg-black/40 border border-white/10 flex flex-wrap gap-1">
@@ -733,12 +880,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
           </button>
           <input 
+            ref={inputRef}
             type="text" 
             value={nuevoMensaje} 
-            onChange={(e) => { setNuevoMensaje(e.target.value); handleTyping(); }} 
-            placeholder={grupoActivoData?.tipo === 'directo' 
-              ? `Mensaje a ${miembrosEspacio.find(m => grupoActivoData?.nombre.includes(m.id) && m.id !== currentUser.id)?.nombre || 'usuario'}`
-              : `Mensaje en #${grupoActivoData?.nombre || 'canal'}`} 
+            onChange={handleInputChange} 
+            placeholder={activeThread 
+              ? 'Responder en hilo...'
+              : (grupoActivoData?.tipo === 'directo' 
+                ? `Mensaje a ${miembrosEspacio.find(m => grupoActivoData?.nombre.includes(m.id) && m.id !== currentUser.id)?.nombre || 'usuario'}`
+                : `Mensaje en #${grupoActivoData?.nombre || 'canal'}`)} 
             className="flex-1 bg-transparent border-none text-[14px] focus:outline-none py-2 placeholder:opacity-30" 
           />
           <div className="flex items-center gap-1">
