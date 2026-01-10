@@ -112,13 +112,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         // No notificar mis propios mensajes
         if (payload.new.usuario_id === currentUser.id) return;
         
-        // Obtener info del usuario
-        const { data: senderData } = await supabase
-          .from('usuarios')
-          .select('nombre')
-          .eq('id', payload.new.usuario_id)
-          .single();
-        
         // Obtener info del grupo
         const { data: grupoData } = await supabase
           .from('grupos_chat')
@@ -129,8 +122,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         // Solo notificar si es del mismo espacio
         if (grupoData?.espacio_id !== activeWorkspace.id) return;
         
+        // Incrementar contador global y por canal
+        incrementUnreadChat();
+        setUnreadByChannel(prev => ({
+          ...prev,
+          [payload.new.grupo_id]: (prev[payload.new.grupo_id] || 0) + 1
+        }));
+        
+        // Obtener info del usuario para el toast
+        const { data: senderData } = await supabase
+          .from('usuarios')
+          .select('nombre')
+          .eq('id', payload.new.usuario_id)
+          .single();
+        
         if (senderData) {
-          console.log('Showing toast for:', senderData.nombre, payload.new.contenido);
+          console.log('🔔 Toast notification:', senderData.nombre, payload.new.contenido);
           const isDirect = grupoData?.tipo === 'directo';
           addToastNotification(
             senderData.nombre,
@@ -184,39 +191,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         table: 'mensajes_chat', 
         filter: `grupo_id=eq.${grupoActivo}` 
       }, async (payload) => {
-        console.log('Nuevo mensaje recibido:', payload.new);
-        
-        // Incrementar contador si el mensaje no es nuestro
-        if (payload.new.usuario_id !== currentUser.id) {
-          incrementUnreadChat();
-          // Incrementar contador por canal
-          setUnreadByChannel(prev => ({
-            ...prev,
-            [payload.new.grupo_id]: (prev[payload.new.grupo_id] || 0) + 1
-          }));
-          
-          // Obtener info del usuario para el toast
-          const { data: senderData } = await supabase
-            .from('usuarios')
-            .select('nombre')
-            .eq('id', payload.new.usuario_id)
-            .single();
-          
-          const grupo = grupos.find(g => g.id === payload.new.grupo_id);
-          const isDirect = grupo?.tipo === 'directo';
-          const channelName = isDirect ? undefined : grupo?.nombre;
-          
-          // Mostrar toast notification
-          if (senderData) {
-            addToastNotification(
-              senderData.nombre,
-              payload.new.contenido,
-              payload.new.grupo_id,
-              channelName,
-              isDirect
-            );
-          }
-        }
+        console.log('Nuevo mensaje recibido en canal activo:', payload.new);
         
         // Recargar todos los mensajes para asegurar consistencia
         const { data } = await supabase
@@ -559,17 +534,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
             <div className="space-y-0.5">
               {miembrosEspacio.filter((u: any) => u.id !== currentUser.id).length > 0 ? miembrosEspacio.filter((u: any) => u.id !== currentUser.id).map((u: any) => {
                 const isOnline = onlineUsers.some(ou => ou.id === u.id);
+                // Calcular mensajes no leídos del DM con este usuario
+                const dmGroup = grupos.find(g => g.tipo === 'directo' && g.nombre.includes(u.id));
+                const dmUnread = dmGroup ? (unreadByChannel[dmGroup.id] || 0) : 0;
                 return (
                 <button 
                   key={u.id} 
                   onClick={() => { console.log('Opening DM with:', u); openDirectChat(u); }}
-                  className="w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer opacity-50 hover:opacity-100"
+                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer ${dmUnread > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100'}`}
                 >
                   <div className="relative">
                     <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.nombre?.charAt(0)}</div>
                     <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`} />
                   </div>
                   <span className="truncate flex-1">{u.nombre}</span>
+                  {dmUnread > 0 && (
+                    <span className="w-5 h-5 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center animate-pulse">
+                      {dmUnread > 9 ? '9+' : dmUnread}
+                    </span>
+                  )}
                 </button>
               );}) : (
                  <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">No hay otros miembros</p>
