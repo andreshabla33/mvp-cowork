@@ -33,6 +33,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const [mentionCursorPos, setMentionCursorPos] = useState(0);
   const [activeThread, setActiveThread] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
+  const [threadCounts, setThreadCounts] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
@@ -194,14 +195,32 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     const cargarMensajes = async () => {
       const { data, error } = await supabase
         .from('mensajes_chat')
-        .select(`id, contenido, creado_en, usuario_id, tipo, usuario:usuarios!mensajes_chat_usuario_id_fkey(id, nombre)`)
+        .select(`id, contenido, creado_en, usuario_id, tipo, respuesta_a, menciones, usuario:usuarios!mensajes_chat_usuario_id_fkey(id, nombre)`)
         .eq('grupo_id', grupoActivo)
+        .is('respuesta_a', null)
         .order('creado_en', { ascending: true });
       
       console.log('Messages loaded:', data?.length, 'for grupo:', grupoActivo);
       if (!error && data) { 
         setMensajes(data as any); 
-        scrollToBottom(); 
+        scrollToBottom();
+        
+        // Cargar conteo de respuestas para cada mensaje
+        const messageIds = data.map((m: any) => m.id);
+        if (messageIds.length > 0) {
+          const { data: replies } = await supabase
+            .from('mensajes_chat')
+            .select('respuesta_a')
+            .in('respuesta_a', messageIds);
+          
+          if (replies) {
+            const counts: Record<string, number> = {};
+            replies.forEach((r: any) => {
+              counts[r.respuesta_a] = (counts[r.respuesta_a] || 0) + 1;
+            });
+            setThreadCounts(counts);
+          }
+        }
       }
     };
     cargarMensajes();
@@ -802,10 +821,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
                   {/* Botón de hilo */}
                   <button 
                     onClick={() => openThread(m.id)}
-                    className="mt-2 flex items-center gap-1 text-[10px] opacity-40 hover:opacity-100 transition-opacity"
+                    className={`mt-2 flex items-center gap-1 text-[10px] transition-opacity ${threadCounts[m.id] ? 'opacity-80 text-indigo-400' : 'opacity-40 hover:opacity-100'}`}
                   >
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
-                    <span>Responder en hilo</span>
+                    <span>{threadCounts[m.id] ? `${threadCounts[m.id]} ${threadCounts[m.id] === 1 ? 'respuesta' : 'respuestas'}` : 'Responder en hilo'}</span>
                   </button>
                 </div>
               </div>
@@ -906,6 +925,57 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         </form>
       </div>
       {showAddMembers && grupoActivo && <AgregarMiembros grupoId={grupoActivo} espacioId={activeWorkspace!.id} onClose={() => setShowAddMembers(false)} />}
+      
+      {/* Panel de Hilo */}
+      {activeThread && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center" onClick={closeThread}>
+          <div className="bg-[#1a1a2e] rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col shadow-2xl border border-white/10" onClick={e => e.stopPropagation()}>
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                <h3 className="font-bold text-sm">Hilo</h3>
+                <span className="text-[10px] opacity-50">{threadMessages.length} mensajes</span>
+              </div>
+              <button onClick={closeThread} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {threadMessages.map((tm: any, idx) => (
+                <div key={tm.id} className={`flex gap-3 ${idx === 0 ? 'pb-3 border-b border-white/10' : ''}`}>
+                  <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-[11px] font-bold shrink-0">
+                    {tm.usuario?.nombre?.charAt(0) || '?'}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-[12px]">{tm.usuario?.nombre || 'Usuario'}</span>
+                      <span className="text-[9px] opacity-40">{new Date(tm.creado_en).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <p className="text-[13px] mt-1 break-words">{renderMessageContent(tm.contenido)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <form onSubmit={enviarMensaje} className="p-4 border-t border-white/10">
+              <div className="flex gap-2">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={nuevoMensaje}
+                  onChange={handleInputChange}
+                  placeholder="Responder en hilo..."
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-[13px] focus:outline-none focus:border-indigo-500/50"
+                />
+                <button type="submit" disabled={!nuevoMensaje.trim()} className="px-4 py-2 bg-indigo-600 rounded-xl text-[12px] font-bold disabled:opacity-30">
+                  Enviar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       
       {/* Toast Notifications */}
       <ChatToast 
