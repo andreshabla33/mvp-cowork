@@ -48,18 +48,22 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
     // Cargar miembros del espacio
     const cargarMiembros = async () => {
+      // Obtener el usuario actual de la sesión
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUserId = session?.user?.id;
+      
       const { data, error } = await supabase
         .from('miembros_espacio')
         .select('usuario_id, usuarios!miembros_espacio_usuario_id_fkey(id, nombre, email)')
         .eq('espacio_id', activeWorkspace.id)
         .eq('aceptado', true);
       
-      console.log('Miembros espacio:', data, 'Error:', error, 'CurrentUser:', currentUser.id);
+      console.log('Miembros espacio:', data, 'Error:', error, 'CurrentUserId:', currentUserId);
       
       if (data && data.length > 0) {
         const miembros = data
           .map((m: any) => m.usuarios)
-          .filter((u: any) => u && u.id && u.id !== currentUser.id);
+          .filter((u: any) => u && u.id && currentUserId && u.id !== currentUserId);
         console.log('Miembros filtrados:', miembros);
         setMiembrosEspacio(miembros);
       }
