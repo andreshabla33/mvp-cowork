@@ -315,46 +315,75 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
          </button>
       </div>
 
-      <div ref={mensajesRef} className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+      <div ref={mensajesRef} className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
         {mensajes.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center opacity-20 select-none">
              <span className="text-6xl mb-4">💬</span>
              <p className="font-black uppercase tracking-[0.3em] text-[10px]">No hay mensajes en este canal</p>
           </div>
-        ) : mensajes.map(m => (
-          <div key={m.id} className={`flex gap-4 ${m.usuario_id === currentUser.id ? 'flex-row-reverse' : ''} animate-in fade-in slide-in-from-bottom-2 duration-500`}>
-            <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-[12px] font-black text-white shrink-0 shadow-2xl ${m.usuario_id === currentUser.id ? 'bg-indigo-600' : 'bg-zinc-700'}`}>
-              {m.usuario?.nombre?.charAt(0).toUpperCase()}
-            </div>
-            <div className={`min-w-0 max-w-[80%] flex flex-col ${m.usuario_id === currentUser.id ? 'items-end' : 'items-start'}`}>
-              <div className="flex items-baseline gap-3 mb-1.5 px-2">
-                <span className={`text-[10px] font-black uppercase tracking-widest ${theme === 'arcade' ? 'text-[#00ff41]' : 'opacity-40'}`}>{m.usuario?.nombre}</span>
-                <span className="text-[8px] opacity-20 font-bold">{new Date(m.creado_en).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        ) : mensajes.map((m, idx) => {
+          const prevMsg = mensajes[idx - 1];
+          const sameUser = prevMsg?.usuario_id === m.usuario_id;
+          const timeDiff = prevMsg ? (new Date(m.creado_en).getTime() - new Date(prevMsg.creado_en).getTime()) / 60000 : Infinity;
+          const showHeader = !sameUser || timeDiff > 5;
+          
+          return (
+            <div key={m.id} className={`group hover:bg-white/[0.02] px-4 py-1 -mx-4 rounded-lg transition-colors ${showHeader ? 'mt-4' : 'mt-0.5'}`}>
+              <div className="flex gap-3">
+                {showHeader ? (
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold text-white shrink-0 ${m.usuario_id === currentUser.id ? 'bg-indigo-600' : 'bg-gradient-to-br from-zinc-600 to-zinc-700'}`}>
+                    {m.usuario?.nombre?.charAt(0).toUpperCase()}
+                  </div>
+                ) : (
+                  <div className="w-9 shrink-0 flex items-center justify-center">
+                    <span className="text-[9px] opacity-0 group-hover:opacity-30 font-mono transition-opacity">
+                      {new Date(m.creado_en).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  {showHeader && (
+                    <div className="flex items-baseline gap-2 mb-0.5">
+                      <span className={`text-[13px] font-bold ${theme === 'arcade' ? 'text-[#00ff41]' : (m.usuario_id === currentUser.id ? 'text-indigo-400' : '')}`}>
+                        {m.usuario?.nombre}
+                      </span>
+                      <span className="text-[10px] opacity-30 font-medium">
+                        {new Date(m.creado_en).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-[14px] leading-relaxed break-words whitespace-pre-wrap">{m.contenido}</p>
+                </div>
               </div>
-              <div className={`text-[13px] p-5 rounded-[28px] leading-relaxed break-words shadow-2xl ${m.usuario_id === currentUser.id ? `${s.bubbleSelf} rounded-tr-none` : `${s.bubbleOther} rounded-tl-none`}`}>
-                {m.contenido}
-              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      <div className="p-8 shrink-0 border-t border-white/5 bg-black/5">
-        <form onSubmit={enviarMensaje} className={`flex gap-3 p-2.5 rounded-[32px] border-2 transition-all ${s.input}`}>
+      <div className="px-6 pb-6 pt-2 shrink-0">
+        <form onSubmit={enviarMensaje} className={`flex items-center gap-2 p-1.5 rounded-xl border transition-all focus-within:border-indigo-500/50 ${s.input}`}>
+          <button type="button" className="p-2 rounded-lg hover:bg-white/10 transition-colors opacity-40 hover:opacity-100">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+          </button>
           <input 
             type="text" 
             value={nuevoMensaje} 
             onChange={(e) => setNuevoMensaje(e.target.value)} 
-            placeholder={`Enviar un mensaje a #${grupoActivoData?.nombre || 'canal'}...`} 
-            className="flex-1 bg-transparent border-none text-[13px] font-bold focus:outline-none px-6 placeholder:opacity-20" 
+            placeholder={`Mensaje en #${grupoActivoData?.nombre || 'canal'}`} 
+            className="flex-1 bg-transparent border-none text-[14px] focus:outline-none py-2 placeholder:opacity-30" 
           />
-          <button 
-            type="submit" 
-            disabled={!nuevoMensaje.trim()} 
-            className={`w-12 h-12 rounded-[22px] flex items-center justify-center disabled:opacity-20 transition-all shadow-2xl active:scale-90 shrink-0 ${s.btn}`}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 12h14M12 5l7 7-7 7"/></svg>
-          </button>
+          <div className="flex items-center gap-1">
+            <button type="button" className="p-2 rounded-lg hover:bg-white/10 transition-colors opacity-40 hover:opacity-100">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </button>
+            <button 
+              type="submit" 
+              disabled={!nuevoMensaje.trim()} 
+              className={`p-2 rounded-lg disabled:opacity-20 transition-all ${nuevoMensaje.trim() ? s.btn : 'opacity-30'}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+            </button>
+          </div>
         </form>
       </div>
       {showAddMembers && grupoActivo && <AgregarMiembros grupoId={grupoActivo} espacioId={activeWorkspace!.id} onClose={() => setShowAddMembers(false)} />}
