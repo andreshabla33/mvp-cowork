@@ -16,6 +16,7 @@ interface AppState {
   activeSubTab: 'space' | 'tasks' | 'miembros' | 'settings' | 'builder' | 'chat' | 'avatar';
   currentUser: User;
   users: User[];
+  onlineUsers: User[];
   tasks: Task[];
   messages: ChatMessage[];
   workspaces: Workspace[];
@@ -26,6 +27,7 @@ interface AppState {
   initialized: boolean;
   isInitializing: boolean;
   notifications: Notification[];
+  setOnlineUsers: (users: User[]) => void;
   
   setSession: (session: any) => void;
   setTheme: (theme: ThemeType) => void;
@@ -93,14 +95,17 @@ export const useStore = create<AppState>((set, get) => ({
     isSitting: false,
     isOnline: true,
     isPrivate: false,
-    isMicOn: false, // Apagado por defecto para proximidad
-    isCameraOn: false, // Apagado por defecto para proximidad
+    isMicOn: false,
+    isCameraOn: false,
     isScreenSharing: false,
     status: PresenceStatus.AVAILABLE,
   },
   users: [],
+  onlineUsers: [],
   tasks: [],
   messages: [],
+  
+  setOnlineUsers: (users) => set({ onlineUsers: users }),
 
   initialize: async () => {
     if (get().isInitializing) return;

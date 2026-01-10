@@ -8,11 +8,11 @@ import { AvatarCustomizer } from './AvatarCustomizer';
 import { ChatPanel } from './ChatPanel';
 import { VibenAssistant } from './VibenAssistant';
 import { AvatarPreview } from './Navbar';
-import { Role, PresenceStatus, ThemeType } from '../types';
+import { Role, PresenceStatus, ThemeType, User } from '../types';
 import { supabase } from '../lib/supabase';
 
 export const WorkspaceLayout: React.FC = () => {
-  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView, session } = useStore();
+  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView, session, setOnlineUsers, addNotification } = useStore();
   const [showViben, setShowViben] = useState(false);
   const presenceChannelRef = useRef<any>(null);
 
@@ -22,7 +22,7 @@ export const WorkspaceLayout: React.FC = () => {
     if (!activeWorkspace) setView('dashboard');
   }, [activeWorkspace, setView]);
 
-  // Realtime Presence - se mantiene activa mientras estemos en el workspace
+  // Realtime Presence CENTRALIZADO - único lugar que maneja presencia
   useEffect(() => {
     if (!activeWorkspace?.id || !session?.user?.id) return;
 
@@ -33,7 +33,37 @@ export const WorkspaceLayout: React.FC = () => {
 
     channel
       .on('presence', { event: 'sync' }, () => {
-        // La sincronización se maneja en VirtualSpace
+        const state = channel.presenceState();
+        const users: User[] = [];
+        Object.keys(state).forEach(key => {
+          const presences = state[key] as any[];
+          presences.forEach(presence => {
+            if (presence.user_id !== session.user.id) {
+              users.push({
+                id: presence.user_id,
+                name: presence.name || 'Usuario',
+                role: presence.role || Role.MIEMBRO,
+                avatar: '',
+                avatarConfig: presence.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' },
+                x: presence.x || 500,
+                y: presence.y || 500,
+                direction: presence.direction || 'front',
+                isOnline: true,
+                isMicOn: presence.isMicOn || false,
+                isCameraOn: presence.isCameraOn || false,
+                isScreenSharing: false,
+                isPrivate: false,
+                status: PresenceStatus.AVAILABLE,
+              });
+            }
+          });
+        });
+        setOnlineUsers(users);
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        if (newPresences[0]?.name) {
+          addNotification(`${newPresences[0].name} se conectó`, 'entry');
+        }
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
@@ -55,12 +85,13 @@ export const WorkspaceLayout: React.FC = () => {
 
     return () => {
       supabase.removeChannel(channel);
+      presenceChannelRef.current = null;
     };
   }, [activeWorkspace?.id, session?.user?.id]);
 
-  // Actualizar presencia cuando cambia la posición (desde cualquier tab)
+  // Actualizar presencia cuando cambia la posición
   useEffect(() => {
-    if (presenceChannelRef.current && session?.user?.id) {
+    if (presenceChannelRef.current && session?.user?.id && presenceChannelRef.current.state === 'joined') {
       presenceChannelRef.current.track({
         user_id: session.user.id,
         name: currentUser.name,

@@ -306,12 +306,10 @@ export const VirtualSpace: React.FC = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [expandedId, setExpandedId] = useState<string | 'local' | null>(null);
-  const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   
   const activeStreamRef = useRef<MediaStream | null>(null);
   const activeScreenRef = useRef<MediaStream | null>(null);
-  const channelRef = useRef<any>(null);
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const webrtcChannelRef = useRef<any>(null);
 
@@ -340,72 +338,13 @@ export const VirtualSpace: React.FC = () => {
   
   const { 
     currentUser, users, activeWorkspace, setPosition, 
-    toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, theme, addNotification, session
+    toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, theme, addNotification, session, onlineUsers
   } = useStore();
 
   const currentUserRef = useRef(currentUser);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
-  // Realtime Presence - Solo escuchar el canal existente (creado en WorkspaceLayout)
-  useEffect(() => {
-    if (!activeWorkspace?.id || !session?.user?.id) return;
-
-    const roomName = `workspace:${activeWorkspace.id}`;
-    // Obtener canal existente o crear uno nuevo solo para escuchar
-    const existingChannels = supabase.getChannels();
-    let channel = existingChannels.find(c => c.topic === `realtime:${roomName}`);
-    
-    if (!channel) {
-      channel = supabase.channel(roomName, {
-        config: { presence: { key: session.user.id } }
-      });
-    }
-
-    const syncHandler = () => {
-      const state = channel!.presenceState();
-      const users: User[] = [];
-      Object.keys(state).forEach(key => {
-        const presences = state[key] as any[];
-        presences.forEach(presence => {
-          if (presence.user_id !== session.user.id) {
-            users.push({
-              id: presence.user_id,
-              name: presence.name || 'Usuario',
-              role: presence.role || Role.MIEMBRO,
-              avatar: '',
-              avatarConfig: presence.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' },
-              x: presence.x || 500,
-              y: presence.y || 500,
-              direction: presence.direction || 'front',
-              isOnline: true,
-              isMicOn: presence.isMicOn || false,
-              isCameraOn: presence.isCameraOn || false,
-              isScreenSharing: false,
-              isPrivate: false,
-              status: PresenceStatus.AVAILABLE,
-            });
-          }
-        });
-      });
-      setOnlineUsers(users);
-    };
-
-    channel.on('presence', { event: 'sync' }, syncHandler);
-    
-    // Solo suscribir si no está ya suscrito
-    if (channel.state !== 'joined') {
-      channel.subscribe();
-    } else {
-      // Si ya está suscrito, sincronizar inmediatamente
-      syncHandler();
-    }
-
-    channelRef.current = channel;
-
-    return () => {
-      // No remover el canal aquí, se maneja en WorkspaceLayout
-    };
-  }, [activeWorkspace?.id, session?.user?.id]);
+  // onlineUsers viene del store (manejado en WorkspaceLayout)
 
   // WebRTC Signaling
   const createPeerConnection = useCallback((peerId: string, isInitiator: boolean) => {
