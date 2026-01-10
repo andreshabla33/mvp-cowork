@@ -27,7 +27,10 @@ interface AppState {
   initialized: boolean;
   isInitializing: boolean;
   notifications: Notification[];
+  unreadChatCount: number;
   setOnlineUsers: (users: User[]) => void;
+  incrementUnreadChat: () => void;
+  clearUnreadChat: () => void;
   
   setSession: (session: any) => void;
   setTheme: (theme: ThemeType) => void;
@@ -104,8 +107,11 @@ export const useStore = create<AppState>((set, get) => ({
   onlineUsers: [],
   tasks: [],
   messages: [],
+  unreadChatCount: 0,
   
   setOnlineUsers: (users) => set({ onlineUsers: users }),
+  incrementUnreadChat: () => set((state) => ({ unreadChatCount: state.unreadChatCount + 1 })),
+  clearUnreadChat: () => set({ unreadChatCount: 0 }),
 
   initialize: async () => {
     if (get().isInitializing) return;

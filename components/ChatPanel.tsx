@@ -12,7 +12,7 @@ interface ChatPanelProps {
 }
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatOnly = false, onChannelSelect }) => {
-  const { activeWorkspace, currentUser, setActiveSubTab, theme, onlineUsers } = useStore();
+  const { activeWorkspace, currentUser, setActiveSubTab, theme, onlineUsers, incrementUnreadChat, activeSubTab } = useStore();
   const [grupos, setGrupos] = useState<ChatGroup[]>([]);
   const [grupoActivo, setGrupoActivo] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
@@ -110,6 +110,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         filter: `grupo_id=eq.${grupoActivo}` 
       }, async (payload) => {
         console.log('Nuevo mensaje recibido:', payload.new);
+        
+        // Incrementar contador si no estamos en el chat y el mensaje no es nuestro
+        if (payload.new.usuario_id !== currentUser.id) {
+          incrementUnreadChat();
+        }
+        
         // Recargar todos los mensajes para asegurar consistencia
         const { data } = await supabase
           .from('mensajes_chat')

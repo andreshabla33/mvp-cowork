@@ -12,7 +12,7 @@ import { Role, PresenceStatus, ThemeType, User } from '../types';
 import { supabase } from '../lib/supabase';
 
 export const WorkspaceLayout: React.FC = () => {
-  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView, session, setOnlineUsers, addNotification } = useStore();
+  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView, session, setOnlineUsers, addNotification, unreadChatCount, clearUnreadChat } = useStore();
   const [showViben, setShowViben] = useState(false);
   const presenceChannelRef = useRef<any>(null);
 
@@ -180,11 +180,19 @@ export const WorkspaceLayout: React.FC = () => {
           ].map(item => (
             <button 
               key={item.id}
-              onClick={() => setActiveSubTab(item.id as any)}
-              className={`p-3.5 rounded-2xl transition-all shadow-xl ${activeSubTab === item.id ? (theme === 'arcade' ? 'bg-[#00ff41] text-black shadow-[0_0_20px_#00ff41]' : 'bg-white/20 text-white') : 'opacity-40 hover:opacity-100 hover:bg-white/5'}`}
+              onClick={() => {
+                setActiveSubTab(item.id as any);
+                if (item.id === 'chat') clearUnreadChat();
+              }}
+              className={`p-3.5 rounded-2xl transition-all shadow-xl relative ${activeSubTab === item.id ? (theme === 'arcade' ? 'bg-[#00ff41] text-black shadow-[0_0_20px_#00ff41]' : 'bg-white/20 text-white') : 'opacity-40 hover:opacity-100 hover:bg-white/5'}`}
               title={item.label}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={item.icon}/></svg>
+              {item.id === 'chat' && unreadChatCount > 0 && activeSubTab !== 'chat' && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center animate-pulse">
+                  {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
