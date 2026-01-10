@@ -346,12 +346,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     setShowMentionPicker(false);
     
     const messageData: any = { 
-      grupo_id: activeThread || grupoActivo, 
+      grupo_id: grupoActivo, 
       usuario_id: currentUser.id, 
       contenido: content, 
       tipo: 'texto',
       menciones: menciones.length > 0 ? menciones : null,
-      respuesta_a: activeThread ? activeThread : null
+      respuesta_a: activeThread || null
     };
     
     const { error } = await supabase.from('mensajes_chat').insert(messageData);
