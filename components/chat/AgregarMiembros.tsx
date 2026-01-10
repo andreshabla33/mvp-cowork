@@ -16,10 +16,10 @@ export const AgregarMiembros: React.FC<Props> = ({ grupoId, espacioId, onClose }
 
   useEffect(() => {
     const cargar = async () => {
-      // Usuarios del espacio
+      // Obtener IDs de usuarios del espacio
       const { data: miembrosEspacio } = await supabase
         .from('miembros_espacio')
-        .select('usuario_id, usuarios!miembros_espacio_usuario_id_fkey(id, nombre, email)')
+        .select('usuario_id')
         .eq('espacio_id', espacioId)
         .eq('aceptado', true);
         
@@ -29,8 +29,17 @@ export const AgregarMiembros: React.FC<Props> = ({ grupoId, espacioId, onClose }
         .select('usuario_id')
         .eq('grupo_id', grupoId);
 
-      setUsuarios(miembrosEspacio?.map((m: any) => m.usuarios).filter((u: any) => u) || []);
-      setMiembrosActuales(miembrosGrupo?.map(m => m.usuario_id) || []);
+      // Obtener datos de usuarios
+      if (miembrosEspacio && miembrosEspacio.length > 0) {
+        const ids = miembrosEspacio.map((m: any) => m.usuario_id);
+        const { data: usuarios } = await supabase
+          .from('usuarios')
+          .select('id, nombre, email')
+          .in('id', ids);
+        setUsuarios(usuarios || []);
+      }
+      
+      setMiembrosActuales(miembrosGrupo?.map((m: any) => m.usuario_id) || []);
     };
     cargar();
   }, [grupoId, espacioId]);

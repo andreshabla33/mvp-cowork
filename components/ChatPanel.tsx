@@ -52,20 +52,30 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       const { data: { session } } = await supabase.auth.getSession();
       const currentUserId = session?.user?.id;
       
+      // Query directa a usuarios a través del usuario_id
       const { data, error } = await supabase
         .from('miembros_espacio')
-        .select('usuario_id, usuarios!miembros_espacio_usuario_id_fkey(id, nombre, email)')
+        .select('usuario_id')
         .eq('espacio_id', activeWorkspace.id)
         .eq('aceptado', true);
       
-      console.log('Miembros espacio:', data, 'Error:', error, 'CurrentUserId:', currentUserId);
+      console.log('Miembros IDs:', data, 'Error:', error, 'CurrentUserId:', currentUserId);
       
       if (data && data.length > 0) {
-        const miembros = data
-          .map((m: any) => m.usuarios)
-          .filter((u: any) => u && u.id && currentUserId && u.id !== currentUserId);
-        console.log('Miembros filtrados:', miembros);
-        setMiembrosEspacio(miembros);
+        // Filtrar el usuario actual y obtener datos de usuarios
+        const otrosIds = data
+          .map((m: any) => m.usuario_id)
+          .filter((id: string) => id !== currentUserId);
+        
+        if (otrosIds.length > 0) {
+          const { data: usuarios } = await supabase
+            .from('usuarios')
+            .select('id, nombre, email')
+            .in('id', otrosIds);
+          
+          console.log('Usuarios encontrados:', usuarios);
+          setMiembrosEspacio(usuarios || []);
+        }
       }
     };
     cargarMiembros();
