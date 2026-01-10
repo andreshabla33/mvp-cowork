@@ -21,9 +21,15 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [miembrosEspacio, setMiembrosEspacio] = useState<any[]>([]);
+  const [unreadByChannel, setUnreadByChannel] = useState<Record<string, number>>({});
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const mensajesRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
+  const typingChannelRef = useRef<any>(null);
+  const typingTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -111,9 +117,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       }, async (payload) => {
         console.log('Nuevo mensaje recibido:', payload.new);
         
-        // Incrementar contador si no estamos en el chat y el mensaje no es nuestro
+        // Incrementar contador si el mensaje no es nuestro
         if (payload.new.usuario_id !== currentUser.id) {
           incrementUnreadChat();
+          // Incrementar contador por canal si no estamos viendo ese canal
+          setUnreadByChannel(prev => ({
+            ...prev,
+            [payload.new.grupo_id]: (prev[payload.new.grupo_id] || 0) + 1
+          }));
         }
         
         // Recargar todos los mensajes para asegurar consistencia
@@ -133,17 +144,55 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
     
     channelRef.current = channel;
 
+    // Canal para typing indicator
+    if (typingChannelRef.current) {
+      supabase.removeChannel(typingChannelRef.current);
+    }
+    const typingChannel = supabase.channel(`typing_${grupoActivo}`)
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload.user_id !== currentUser.id) {
+          setTypingUsers(prev => {
+            if (!prev.includes(payload.user_name)) return [...prev, payload.user_name];
+            return prev;
+          });
+          // Remover después de 3 segundos
+          setTimeout(() => {
+            setTypingUsers(prev => prev.filter(u => u !== payload.user_name));
+          }, 3000);
+        }
+      })
+      .subscribe();
+    typingChannelRef.current = typingChannel;
+
     return () => { 
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
+      if (typingChannelRef.current) {
+        supabase.removeChannel(typingChannelRef.current);
+        typingChannelRef.current = null;
+      }
     };
   }, [grupoActivo]);
+
+  // Broadcast typing cuando el usuario escribe
+  const handleTyping = () => {
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'typing',
+      payload: { user_id: currentUser.id, user_name: currentUser.name }
+    });
+    typingTimeoutRef.current = setTimeout(() => {}, 2000);
+  };
 
   const scrollToBottom = () => {
     setTimeout(() => { if (mensajesRef.current) mensajesRef.current.scrollTop = mensajesRef.current.scrollHeight; }, 150);
   };
+
+  // Emojis comunes
+  const emojis = ['😀', '😂', '🥰', '😎', '🤔', '👍', '👎', '❤️', '🔥', '🎉', '✅', '💯', '🚀', '💡', '⭐'];
 
   const enviarMensaje = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,8 +205,33 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
   const handleChannelSelect = (id: string) => {
     setGrupoActivo(id);
+    setUnreadByChannel(prev => ({ ...prev, [id]: 0 })); // Limpiar no leídos del canal
     setActiveSubTab('chat' as any);
     if (onChannelSelect) onChannelSelect();
+  };
+
+  // Manejar archivo adjunto
+  const handleFileAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !grupoActivo) return;
+    
+    // Subir a Supabase Storage
+    const fileName = `${Date.now()}_${file.name}`;
+    const { data, error } = await supabase.storage
+      .from('chat-files')
+      .upload(`${activeWorkspace?.id}/${fileName}`, file);
+    
+    if (!error && data) {
+      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(data.path);
+      // Enviar mensaje con el archivo
+      await supabase.from('mensajes_chat').insert({
+        grupo_id: grupoActivo,
+        usuario_id: currentUser.id,
+        contenido: `📎 [${file.name}](${urlData.publicUrl})`,
+        tipo: 'archivo'
+      });
+    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const chatStyles = {
@@ -241,16 +315,23 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
               </button>
             </div>
             <div className="space-y-0.5">
-              {grupos.map(g => (
+              {grupos.map(g => {
+                const unreadCount = unreadByChannel[g.id] || 0;
+                return (
                 <button 
                   key={g.id} 
                   onClick={() => handleChannelSelect(g.id)} 
-                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 truncate ${grupoActivo === g.id ? s.activeItem : 'opacity-50 hover:opacity-100 hover:bg-white/5'}`}
+                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${grupoActivo === g.id ? s.activeItem : (unreadCount > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100 hover:bg-white/5')}`}
                 >
                   <span className="opacity-40">{g.tipo === 'privado' ? '🔒' : '#'}</span>
-                  <span className="truncate">{g.nombre}</span>
+                  <span className="truncate flex-1">{g.nombre}</span>
+                  {unreadCount > 0 && (
+                    <span className="w-5 h-5 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center animate-pulse">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
                 </button>
-              ))}
+              );})}
             </div>
           </div>
 
@@ -361,19 +442,48 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       </div>
 
       <div className="px-6 pb-6 pt-2 shrink-0">
+        {/* Typing indicator */}
+        {typingUsers.length > 0 && (
+          <div className="px-2 py-1 mb-2 text-[11px] opacity-50 italic flex items-center gap-2">
+            <span className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </span>
+            <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'está' : 'están'} escribiendo...</span>
+          </div>
+        )}
+        
+        {/* Emoji picker */}
+        {showEmojiPicker && (
+          <div className="mb-2 p-2 rounded-xl bg-black/40 border border-white/10 flex flex-wrap gap-1">
+            {emojis.map(emoji => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => { setNuevoMensaje(prev => prev + emoji); setShowEmojiPicker(false); }}
+                className="w-8 h-8 hover:bg-white/10 rounded-lg transition-colors text-lg"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+        
         <form onSubmit={enviarMensaje} className={`flex items-center gap-2 p-1.5 rounded-xl border transition-all focus-within:border-indigo-500/50 ${s.input}`}>
-          <button type="button" className="p-2 rounded-lg hover:bg-white/10 transition-colors opacity-40 hover:opacity-100">
+          <input type="file" ref={fileInputRef} onChange={handleFileAttach} className="hidden" accept="image/*,.pdf,.doc,.docx,.txt" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-lg hover:bg-white/10 transition-colors opacity-40 hover:opacity-100" title="Adjuntar archivo">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
           </button>
           <input 
             type="text" 
             value={nuevoMensaje} 
-            onChange={(e) => setNuevoMensaje(e.target.value)} 
+            onChange={(e) => { setNuevoMensaje(e.target.value); handleTyping(); }} 
             placeholder={`Mensaje en #${grupoActivoData?.nombre || 'canal'}`} 
             className="flex-1 bg-transparent border-none text-[14px] focus:outline-none py-2 placeholder:opacity-30" 
           />
           <div className="flex items-center gap-1">
-            <button type="button" className="p-2 rounded-lg hover:bg-white/10 transition-colors opacity-40 hover:opacity-100">
+            <button type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2 rounded-lg hover:bg-white/10 transition-colors ${showEmojiPicker ? 'opacity-100 bg-white/10' : 'opacity-40 hover:opacity-100'}`} title="Emojis">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             </button>
             <button 
