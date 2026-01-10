@@ -35,6 +35,20 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const typingChannelRef = useRef<any>(null);
   const typingTimeoutRef = useRef<any>(null);
   const globalNotifChannelRef = useRef<any>(null);
+  const notificationSoundRef = useRef<HTMLAudioElement | null>(null);
+
+  // Inicializar sonido de notificación
+  useEffect(() => {
+    notificationSoundRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    notificationSoundRef.current.volume = 0.3;
+  }, []);
+
+  const playNotificationSound = () => {
+    if (notificationSoundRef.current) {
+      notificationSoundRef.current.currentTime = 0;
+      notificationSoundRef.current.play().catch(() => {});
+    }
+  };
 
   useEffect(() => {
     if (!activeWorkspace) return;
@@ -139,6 +153,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         if (senderData) {
           console.log('🔔 Toast notification:', senderData.nombre, payload.new.contenido);
           const isDirect = grupoData?.tipo === 'directo';
+          
+          // Reproducir sonido de notificación
+          playNotificationSound();
+          
           addToastNotification(
             senderData.nombre,
             payload.new.contenido,
@@ -534,25 +552,17 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
             <div className="space-y-0.5">
               {miembrosEspacio.filter((u: any) => u.id !== currentUser.id).length > 0 ? miembrosEspacio.filter((u: any) => u.id !== currentUser.id).map((u: any) => {
                 const isOnline = onlineUsers.some(ou => ou.id === u.id);
-                // Calcular mensajes no leídos del DM con este usuario
-                const dmGroup = grupos.find(g => g.tipo === 'directo' && g.nombre.includes(u.id));
-                const dmUnread = dmGroup ? (unreadByChannel[dmGroup.id] || 0) : 0;
                 return (
                 <button 
                   key={u.id} 
                   onClick={() => { console.log('Opening DM with:', u); openDirectChat(u); }}
-                  className={`w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer ${dmUnread > 0 ? 'opacity-100 bg-white/5' : 'opacity-50 hover:opacity-100'}`}
+                  className="w-full text-left px-4 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3 cursor-pointer opacity-50 hover:opacity-100"
                 >
                   <div className="relative">
                     <div className="w-5 h-5 rounded-full bg-indigo-500/20 flex items-center justify-center text-[8px] font-black">{u.nombre?.charAt(0)}</div>
                     <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#19171d] ${isOnline ? 'bg-green-500' : 'bg-zinc-500'}`} />
                   </div>
                   <span className="truncate flex-1">{u.nombre}</span>
-                  {dmUnread > 0 && (
-                    <span className="w-5 h-5 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center animate-pulse">
-                      {dmUnread > 9 ? '9+' : dmUnread}
-                    </span>
-                  )}
                 </button>
               );}) : (
                  <p className="px-4 py-2 text-[9px] opacity-30 italic font-bold">No hay otros miembros</p>
@@ -726,7 +736,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
             type="text" 
             value={nuevoMensaje} 
             onChange={(e) => { setNuevoMensaje(e.target.value); handleTyping(); }} 
-            placeholder={`Mensaje en #${grupoActivoData?.nombre || 'canal'}`} 
+            placeholder={grupoActivoData?.tipo === 'directo' 
+              ? `Mensaje a ${miembrosEspacio.find(m => grupoActivoData?.nombre.includes(m.id) && m.id !== currentUser.id)?.nombre || 'usuario'}`
+              : `Mensaje en #${grupoActivoData?.nombre || 'canal'}`} 
             className="flex-1 bg-transparent border-none text-[14px] focus:outline-none py-2 placeholder:opacity-30" 
           />
           <div className="flex items-center gap-1">
