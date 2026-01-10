@@ -46,9 +46,12 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       
       if (!error && data) {
         setGrupos(data);
+        // Solo establecer grupoActivo inicial si no hay uno seleccionado
+        // Y asegurarse de que sea un canal, no un DM
         if (data.length > 0 && !grupoActivo) {
-          const general = data.find(g => g.nombre.toLowerCase() === 'general');
-          setGrupoActivo(general ? general.id : data[0].id);
+          const canales = data.filter(g => g.tipo !== 'directo');
+          const general = canales.find(g => g.nombre.toLowerCase() === 'general');
+          setGrupoActivo(general ? general.id : (canales[0]?.id || data[0].id));
         }
       }
       setLoading(false);
