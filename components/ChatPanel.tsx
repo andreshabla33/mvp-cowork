@@ -278,7 +278,13 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
       console.log('Create result:', data, error);
       if (!error && data) {
         directChat = data;
-        setGrupos(prev => [...prev, data]); // Agregar a la lista de grupos
+        // Recargar todos los grupos para incluir el nuevo
+        const { data: allGroups } = await supabase
+          .from('grupos_chat')
+          .select('*')
+          .eq('espacio_id', activeWorkspace.id)
+          .order('creado_en', { ascending: true });
+        if (allGroups) setGrupos(allGroups);
       }
     } else {
       console.log('Found existing chat:', directChat);
@@ -286,7 +292,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
 
     if (directChat) {
       console.log('Selecting chat:', directChat.id);
-      handleChannelSelect(directChat.id);
+      setGrupoActivo(directChat.id);
+      setActiveSubTab('chat');
     }
   };
 
