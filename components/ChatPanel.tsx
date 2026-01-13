@@ -4,6 +4,7 @@ import { ChatGroup, ChatMessage, User } from '../types';
 import { useStore } from '../store/useStore';
 import { ModalCrearGrupo } from './chat/ModalCrearGrupo';
 import { AgregarMiembros } from './chat/AgregarMiembros';
+import { MeetingRooms } from './MeetingRooms';
 
 interface ChatPanelProps {
   sidebarOnly?: boolean;
@@ -20,6 +21,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
+  const [showMeetingRooms, setShowMeetingRooms] = useState(false);
   
   const mensajesRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
@@ -152,16 +154,25 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ sidebarOnly = false, chatO
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           {/* Navegación Principal: Hilos, Juntas */}
           <div className="px-2 py-4 space-y-0.5">
-            {[
-              { id: 'hilos', icon: '💬', label: 'Hilos' },
-              { id: 'juntas', icon: '🎧', label: 'Juntas' },
-              { id: 'borradores', icon: '📝', label: 'Borradores' },
-            ].map(item => (
-              <button key={item.id} className="w-full text-left px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3">
-                <span className="w-4 text-center opacity-60">{item.icon}</span>
-                <span className="truncate">{item.label}</span>
-              </button>
-            ))}
+            <button className="w-full text-left px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3">
+              <span className="w-4 text-center opacity-60">💬</span>
+              <span className="truncate">Hilos</span>
+            </button>
+            <button 
+              onClick={() => setShowMeetingRooms(!showMeetingRooms)}
+              className={`w-full text-left px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-3 ${showMeetingRooms ? s.activeItem : 'hover:bg-white/5'}`}
+            >
+              <span className="w-4 text-center opacity-60">🎧</span>
+              <span className="truncate">Juntas</span>
+              <svg className={`w-3 h-3 ml-auto opacity-50 transition-transform ${showMeetingRooms ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showMeetingRooms && <MeetingRooms />}
+            <button className="w-full text-left px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-white/5 transition-all flex items-center gap-3">
+              <span className="w-4 text-center opacity-60">📝</span>
+              <span className="truncate">Borradores</span>
+            </button>
           </div>
 
           <div className="h-px bg-white/5 mx-4 my-2" />
