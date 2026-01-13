@@ -16,7 +16,6 @@ interface AppState {
   activeSubTab: 'space' | 'tasks' | 'miembros' | 'settings' | 'builder' | 'chat' | 'avatar';
   currentUser: User;
   users: User[];
-  onlineUsers: User[];
   tasks: Task[];
   messages: ChatMessage[];
   workspaces: Workspace[];
@@ -27,12 +26,6 @@ interface AppState {
   initialized: boolean;
   isInitializing: boolean;
   notifications: Notification[];
-  unreadChatCount: number;
-  activeChatGroupId: string | null;
-  setOnlineUsers: (users: User[]) => void;
-  incrementUnreadChat: () => void;
-  clearUnreadChat: () => void;
-  setActiveChatGroupId: (id: string | null) => void;
   
   setSession: (session: any) => void;
   setTheme: (theme: ThemeType) => void;
@@ -45,7 +38,7 @@ interface AppState {
   
   setPosition: (x: number, y: number, direction?: User['direction'], isSitting?: boolean, isMoving?: boolean) => void;
   updateAvatar: (config: AvatarConfig) => Promise<void>;
-  updateStatus: (status: PresenceStatus) => void;
+  updateStatus: (status: PresenceStatus, statusText?: string) => Promise<void>;
   toggleMic: () => void;
   toggleCamera: () => void;
   toggleScreenShare: (val?: boolean) => void;
@@ -100,22 +93,14 @@ export const useStore = create<AppState>((set, get) => ({
     isSitting: false,
     isOnline: true,
     isPrivate: false,
-    isMicOn: false,
-    isCameraOn: false,
+    isMicOn: false, // Apagado por defecto para proximidad
+    isCameraOn: false, // Apagado por defecto para proximidad
     isScreenSharing: false,
     status: PresenceStatus.AVAILABLE,
   },
   users: [],
-  onlineUsers: [],
   tasks: [],
   messages: [],
-  unreadChatCount: 0,
-  activeChatGroupId: null,
-  
-  setOnlineUsers: (users) => set({ onlineUsers: users }),
-  incrementUnreadChat: () => set((state) => ({ unreadChatCount: state.unreadChatCount + 1 })),
-  clearUnreadChat: () => set({ unreadChatCount: 0 }),
-  setActiveChatGroupId: (id) => set({ activeChatGroupId: id }),
 
   initialize: async () => {
     if (get().isInitializing) return;
@@ -268,9 +253,19 @@ export const useStore = create<AppState>((set, get) => ({
     set((state) => ({ currentUser: { ...state.currentUser, avatarConfig: config } }));
   },
 
-  updateStatus: (status) => set((state) => ({
-    currentUser: { ...state.currentUser, status }
-  })),
+  updateStatus: async (status, statusText) => {
+    const { session } = get();
+    if (session?.user?.id) {
+      await supabase.from('usuarios').update({
+        estado_disponibilidad: status,
+        estado_personalizado: statusText || null,
+        estado_actualizado_en: new Date().toISOString()
+      }).eq('id', session.user.id);
+    }
+    set((state) => ({
+      currentUser: { ...state.currentUser, status, statusText: statusText || state.currentUser.statusText }
+    }));
+  },
 
   toggleMic: () => set((state) => ({
     currentUser: { ...state.currentUser, isMicOn: !state.currentUser.isMicOn }
@@ -311,8 +306,8 @@ export const useStore = create<AppState>((set, get) => ({
   updateTaskStatus: (id, status) => set((state) => ({ tasks: state.tasks.map(t => t.id === id ? { ...t, status } : t) })),
   addMessage: (msg) => {
     const { currentUser } = get();
-    if (msg.contenido?.includes(`@${currentUser.name}`)) {
-      get().addNotification(`Fuiste mencionado por ${msg.usuario?.nombre || 'alguien'}`, 'mention');
+    if (msg.text.includes(`@${currentUser.name}`)) {
+      get().addNotification(`Fuiste mencionado por ${msg.senderName}`, 'mention');
     }
     set((state) => ({ messages: [...state.messages, msg] }));
   },

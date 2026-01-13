@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import { VirtualSpace } from './VirtualSpace';
 import { TaskBoard } from './TaskBoard';
@@ -8,103 +8,18 @@ import { AvatarCustomizer } from './AvatarCustomizer';
 import { ChatPanel } from './ChatPanel';
 import { VibenAssistant } from './VibenAssistant';
 import { AvatarPreview } from './Navbar';
-import { Role, PresenceStatus, ThemeType, User } from '../types';
-import { supabase } from '../lib/supabase';
+import { StatusSelector } from './StatusSelector';
+import { Role, PresenceStatus, ThemeType } from '../types';
 
 export const WorkspaceLayout: React.FC = () => {
-  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView, session, setOnlineUsers, addNotification, unreadChatCount, clearUnreadChat } = useStore();
+  const { activeWorkspace, activeSubTab, setActiveSubTab, setActiveWorkspace, currentUser, theme, setTheme, setView } = useStore();
   const [showViben, setShowViben] = useState(false);
-  const presenceChannelRef = useRef<any>(null);
 
   const onVibenToggle = () => setShowViben(prev => !prev);
 
   useEffect(() => {
     if (!activeWorkspace) setView('dashboard');
   }, [activeWorkspace, setView]);
-
-  // Realtime Presence CENTRALIZADO - único lugar que maneja presencia
-  useEffect(() => {
-    if (!activeWorkspace?.id || !session?.user?.id) return;
-
-    const roomName = `workspace:${activeWorkspace.id}`;
-    const channel = supabase.channel(roomName, {
-      config: { presence: { key: session.user.id } }
-    });
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const users: User[] = [];
-        Object.keys(state).forEach(key => {
-          const presences = state[key] as any[];
-          presences.forEach(presence => {
-            if (presence.user_id !== session.user.id) {
-              users.push({
-                id: presence.user_id,
-                name: presence.name || 'Usuario',
-                role: presence.role || Role.MIEMBRO,
-                avatar: '',
-                avatarConfig: presence.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' },
-                x: presence.x || 500,
-                y: presence.y || 500,
-                direction: presence.direction || 'front',
-                isOnline: true,
-                isMicOn: presence.isMicOn || false,
-                isCameraOn: presence.isCameraOn || false,
-                isScreenSharing: false,
-                isPrivate: false,
-                status: PresenceStatus.AVAILABLE,
-              });
-            }
-          });
-        });
-        setOnlineUsers(users);
-      })
-      .on('presence', { event: 'join' }, ({ newPresences }) => {
-        if (newPresences[0]?.name) {
-          addNotification(`${newPresences[0].name} se conectó`, 'entry');
-        }
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({
-            user_id: session.user.id,
-            name: currentUser.name,
-            role: currentUser.role,
-            avatarConfig: currentUser.avatarConfig,
-            x: currentUser.x,
-            y: currentUser.y,
-            direction: currentUser.direction,
-            isMicOn: currentUser.isMicOn,
-            isCameraOn: currentUser.isCameraOn,
-          });
-        }
-      });
-
-    presenceChannelRef.current = channel;
-
-    return () => {
-      supabase.removeChannel(channel);
-      presenceChannelRef.current = null;
-    };
-  }, [activeWorkspace?.id, session?.user?.id]);
-
-  // Actualizar presencia cuando cambia la posición
-  useEffect(() => {
-    if (presenceChannelRef.current && session?.user?.id && presenceChannelRef.current.state === 'joined') {
-      presenceChannelRef.current.track({
-        user_id: session.user.id,
-        name: currentUser.name,
-        role: currentUser.role,
-        avatarConfig: currentUser.avatarConfig,
-        x: currentUser.x,
-        y: currentUser.y,
-        direction: currentUser.direction,
-        isMicOn: currentUser.isMicOn,
-        isCameraOn: currentUser.isCameraOn,
-      });
-    }
-  }, [currentUser.x, currentUser.y, currentUser.isMicOn, currentUser.isCameraOn, session?.user?.id]);
 
   if (!activeWorkspace) return null;
 
@@ -180,19 +95,11 @@ export const WorkspaceLayout: React.FC = () => {
           ].map(item => (
             <button 
               key={item.id}
-              onClick={() => {
-                setActiveSubTab(item.id as any);
-                if (item.id === 'chat') clearUnreadChat();
-              }}
-              className={`p-3.5 rounded-2xl transition-all shadow-xl relative ${activeSubTab === item.id ? (theme === 'arcade' ? 'bg-[#00ff41] text-black shadow-[0_0_20px_#00ff41]' : 'bg-white/20 text-white') : 'opacity-40 hover:opacity-100 hover:bg-white/5'}`}
+              onClick={() => setActiveSubTab(item.id as any)}
+              className={`p-3.5 rounded-2xl transition-all shadow-xl ${activeSubTab === item.id ? (theme === 'arcade' ? 'bg-[#00ff41] text-black shadow-[0_0_20px_#00ff41]' : 'bg-white/20 text-white') : 'opacity-40 hover:opacity-100 hover:bg-white/5'}`}
               title={item.label}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={item.icon}/></svg>
-              {item.id === 'chat' && unreadChatCount > 0 && activeSubTab !== 'chat' && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center animate-pulse">
-                  {unreadChatCount > 9 ? '9+' : unreadChatCount}
-                </span>
-              )}
             </button>
           ))}
         </nav>
@@ -223,6 +130,9 @@ export const WorkspaceLayout: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-6">
+            {/* SELECTOR DE ESTADO */}
+            <StatusSelector />
+            
             {/* SELECTOR DE TEMAS */}
             <div className={`flex items-center gap-2 p-1 rounded-[20px] border ${s.border} bg-black/20 shadow-inner`}>
               <span className="text-[9px] font-black uppercase tracking-widest opacity-30 px-3 hidden lg:block">Estilo</span>

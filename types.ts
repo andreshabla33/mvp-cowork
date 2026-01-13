@@ -49,6 +49,7 @@ export interface User {
   cargo?: string;
   departamento?: string;
   status: PresenceStatus;
+  statusText?: string;
 }
 
 export interface Departamento {

@@ -127,7 +127,7 @@ const InvitationProcessor: React.FC = () => {
 
     try {
       if (!session) {
-        setAuthFeedback({ type: 'success', message: 'Inicia sesión con tu correo para aceptar la invitación.' });
+        setAuthFeedback({ type: 'info', message: 'Inicia sesión con tu correo para aceptar la invitación.' });
         setView('loading');
         setTimeout(() => setView('dashboard'), 100); 
         return;

@@ -55,7 +55,7 @@ export const AvatarCustomizer: React.FC<AvatarCustomizerProps> = ({ compact = fa
     ? "p-6 flex flex-col gap-6" 
     : "p-8 max-w-6xl mx-auto flex flex-col md:flex-row gap-8 items-stretch h-full overflow-y-auto animate-in fade-in slide-in-from-bottom-4 duration-700";
 
-  const panelBg = compact ? "" : 'bg-black/40';
+  const panelBg = compact ? "" : (theme === 'mocha' ? 'bg-[#1a120b]/60' : 'bg-black/40');
 
   return (
     <div className={containerClasses}>

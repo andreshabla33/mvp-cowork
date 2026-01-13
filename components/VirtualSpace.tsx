@@ -1,9 +1,8 @@
 
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import Phaser from 'phaser';
 import { useStore } from '../store/useStore';
 import { User, Role, PresenceStatus } from '../types';
-import { supabase } from '../lib/supabase';
 
 const MOVE_SPEED = 240; 
 const INITIAL_ZOOM = 1.3;
@@ -12,6 +11,22 @@ const MAX_ZOOM = 2.5;
 const PROXIMITY_RADIUS = 180; 
 const CAMERA_LERP = 0.15; 
 
+const MOCK_BOT: User = {
+  id: 'proximity-bot',
+  name: 'Sara',
+  role: Role.MODERADOR,
+  avatar: '',
+  avatarConfig: { skinColor: '#f87171', clothingColor: '#4f46e5', hairColor: '#2d1b14', accessory: 'none' },
+  x: 800,
+  y: 600,
+  direction: 'front',
+  isOnline: true,
+  isMicOn: true,
+  isCameraOn: true,
+  isScreenSharing: true,
+  isPrivate: false,
+  status: PresenceStatus.AVAILABLE,
+};
 
 // --- Iconos ---
 const IconMic = ({ on }: { on: boolean }) => (
@@ -93,7 +108,15 @@ const Minimap: React.FC<{ currentUser: User; users: User[]; workspace: any }> = 
             }}
           />
         ))}
-              </div>
+        <div 
+          className="absolute w-1.5 h-1.5 bg-red-500/50 rounded-full"
+          style={{ 
+            left: `${MOCK_BOT.x * scaleX}px`, 
+            top: `${MOCK_BOT.y * scaleY}px`,
+            transform: 'translate(-50%, -50%)'
+          }}
+        />
+      </div>
     </div>
   );
 };
@@ -101,10 +124,9 @@ const Minimap: React.FC<{ currentUser: User; users: User[]; workspace: any }> = 
 // --- VideoHUD Component ---
 const VideoHUD = React.memo(({ 
   userName, micOn, camOn, sharingOn, isPrivate, usersInCall, stream, screenStream,
-  remoteStreams, onToggleMic, onToggleCam, onToggleShare, onTogglePrivacy, onTriggerReaction, theme,
+  onToggleMic, onToggleCam, onToggleShare, onTogglePrivacy, onTriggerReaction, theme,
   expandedId, setExpandedId 
 }: any) => {
-  const remoteVideoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null); 
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
@@ -269,32 +291,21 @@ const VideoHUD = React.memo(({
           </div>
         )}
 
-        {usersInCall.map((u: any) => {
-          const remoteStream = remoteStreams?.get(u.id);
-          return (expandedId !== u.id) && (
+        {usersInCall.map((u: any) => (
+          (expandedId !== u.id) && (
             <div key={u.id} className={`relative bg-zinc-900 rounded-[28px] overflow-hidden border ${theme === 'arcade' ? 'border-[#00ff41]' : 'border-white/10'} shadow-2xl group transition-all shrink-0 ${expandedId ? 'w-full aspect-video' : 'w-48 h-32 md:w-60 md:h-40'}`}>
-               {remoteStream ? (
-                 <video 
-                   autoPlay playsInline 
-                   className="absolute inset-0 w-full h-full object-cover"
-                   ref={(el) => { if (el && el.srcObject !== remoteStream) { el.srcObject = remoteStream; el.play().catch(() => {}); } }}
-                 />
-               ) : (
-                 <>
-                   <img src={`https://picsum.photos/seed/${u.id}/400/300`} className="absolute inset-0 w-full h-full object-cover opacity-40 blur-[2px]" />
-                   <div className="absolute inset-0 flex items-center justify-center">
-                      <div className={`w-14 h-14 rounded-full border border-white/10 flex items-center justify-center text-white font-black text-2xl bg-black/40`}>{u.name.charAt(0)}</div>
-                   </div>
-                 </>
-               )}
+               <img src={`https://picsum.photos/seed/${u.id}/400/300`} className="absolute inset-0 w-full h-full object-cover opacity-40 blur-[2px]" />
+               <div className="absolute inset-0 flex items-center justify-center">
+                  <div className={`w-14 h-14 rounded-full border border-white/10 flex items-center justify-center text-white font-black text-2xl bg-black/40`}>{u.name.charAt(0)}</div>
+               </div>
                <BubbleControls isLocal={false} targetId={u.id} />
                <div className="absolute top-3 left-3 flex items-center gap-2 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 shadow-lg">
                   <div className={`w-2 h-2 rounded-full ${u.isMicOn ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
                   <span className="text-[9px] font-black uppercase tracking-widest text-white truncate max-w-[80px]">{u.name}</span>
                </div>
             </div>
-          );
-        })}
+          )
+        ))}
       </div>
     </div>
   );
@@ -306,165 +317,17 @@ export const VirtualSpace: React.FC = () => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [expandedId, setExpandedId] = useState<string | 'local' | null>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
   
   const activeStreamRef = useRef<MediaStream | null>(null);
   const activeScreenRef = useRef<MediaStream | null>(null);
-  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const webrtcChannelRef = useRef<any>(null);
-
-  const ICE_SERVERS = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { 
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ];
   
   const { 
     currentUser, users, activeWorkspace, setPosition, 
-    toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, theme, addNotification, session, onlineUsers
+    toggleMic, toggleCamera, toggleScreenShare, togglePrivacy, setPrivacy, theme, addNotification
   } = useStore();
 
   const currentUserRef = useRef(currentUser);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
-
-  // onlineUsers viene del store (manejado en WorkspaceLayout)
-
-  // WebRTC Signaling
-  const createPeerConnection = useCallback((peerId: string, isInitiator: boolean) => {
-    if (peerConnectionsRef.current.has(peerId)) return peerConnectionsRef.current.get(peerId)!;
-    
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    peerConnectionsRef.current.set(peerId, pc);
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && webrtcChannelRef.current) {
-        webrtcChannelRef.current.send({
-          type: 'broadcast',
-          event: 'ice-candidate',
-          payload: { candidate: event.candidate, to: peerId, from: session?.user?.id }
-        });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      console.log('Received remote track from', peerId);
-      setRemoteStreams(prev => {
-        const newMap = new Map(prev);
-        newMap.set(peerId, event.streams[0]);
-        return newMap;
-      });
-    };
-
-    pc.onconnectionstatechange = () => {
-      console.log(`Connection state with ${peerId}:`, pc.connectionState);
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-        pc.close();
-        peerConnectionsRef.current.delete(peerId);
-        setRemoteStreams(prev => {
-          const newMap = new Map(prev);
-          newMap.delete(peerId);
-          return newMap;
-        });
-      }
-    };
-
-    if (activeStreamRef.current) {
-      activeStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, activeStreamRef.current!);
-      });
-    }
-
-    return pc;
-  }, [session?.user?.id]);
-
-  const handleOffer = useCallback(async (offer: RTCSessionDescriptionInit, fromId: string) => {
-    const pc = createPeerConnection(fromId, false);
-    await pc.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    
-    if (webrtcChannelRef.current) {
-      webrtcChannelRef.current.send({
-        type: 'broadcast',
-        event: 'answer',
-        payload: { answer, to: fromId, from: session?.user?.id }
-      });
-    }
-  }, [createPeerConnection, session?.user?.id]);
-
-  const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit, fromId: string) => {
-    const pc = peerConnectionsRef.current.get(fromId);
-    if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
-  }, []);
-
-  const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit, fromId: string) => {
-    const pc = peerConnectionsRef.current.get(fromId);
-    if (pc) await pc.addIceCandidate(new RTCIceCandidate(candidate));
-  }, []);
-
-  const initiateCall = useCallback(async (peerId: string) => {
-    const pc = createPeerConnection(peerId, true);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    
-    if (webrtcChannelRef.current) {
-      webrtcChannelRef.current.send({
-        type: 'broadcast',
-        event: 'offer',
-        payload: { offer, to: peerId, from: session?.user?.id }
-      });
-    }
-  }, [createPeerConnection, session?.user?.id]);
-
-  // WebRTC Channel
-  useEffect(() => {
-    if (!activeWorkspace?.id || !session?.user?.id) return;
-
-    const webrtcChannel = supabase.channel(`webrtc:${activeWorkspace.id}`);
-    
-    webrtcChannel
-      .on('broadcast', { event: 'offer' }, ({ payload }) => {
-        if (payload.to === session.user.id) {
-          handleOffer(payload.offer, payload.from);
-        }
-      })
-      .on('broadcast', { event: 'answer' }, ({ payload }) => {
-        if (payload.to === session.user.id) {
-          handleAnswer(payload.answer, payload.from);
-        }
-      })
-      .on('broadcast', { event: 'ice-candidate' }, ({ payload }) => {
-        if (payload.to === session.user.id) {
-          handleIceCandidate(payload.candidate, payload.from);
-        }
-      })
-      .subscribe();
-
-    webrtcChannelRef.current = webrtcChannel;
-
-    return () => {
-      supabase.removeChannel(webrtcChannel);
-      peerConnectionsRef.current.forEach(pc => pc.close());
-      peerConnectionsRef.current.clear();
-    };
-  }, [activeWorkspace?.id, session?.user?.id, handleOffer, handleAnswer, handleIceCandidate]);
 
   const themeColors = { 
     dark: '#09090b', 
@@ -474,11 +337,11 @@ export const VirtualSpace: React.FC = () => {
   };
 
   const usersInCall = useMemo(() => {
-    return onlineUsers.filter(u => {
+    return [...users, MOCK_BOT].filter(u => {
       const dist = Math.sqrt(Math.pow(u.x - currentUser.x, 2) + Math.pow(u.y - currentUser.y, 2));
       return dist < PROXIMITY_RADIUS;
     });
-  }, [onlineUsers, currentUser.x, currentUser.y]);
+  }, [users, currentUser.x, currentUser.y]);
   
   const hasActiveCall = usersInCall.length > 0;
 
@@ -494,19 +357,6 @@ export const VirtualSpace: React.FC = () => {
       if (!currentUser.isCameraOn) toggleCamera();
     }
   }, [hasActiveCall]);
-
-  // Initiate WebRTC calls when users come into proximity
-  useEffect(() => {
-    if (!hasActiveCall || !activeStreamRef.current) return;
-    
-    usersInCall.forEach(user => {
-      if (!peerConnectionsRef.current.has(user.id) && session?.user?.id) {
-        if (session.user.id < user.id) {
-          initiateCall(user.id);
-        }
-      }
-    });
-  }, [usersInCall, hasActiveCall, initiateCall, session?.user?.id]);
 
   const handleToggleScreenShare = async (forceVal?: boolean) => {
     const newVal = forceVal !== undefined ? forceVal : !currentUser.isScreenSharing;
@@ -621,6 +471,8 @@ export const VirtualSpace: React.FC = () => {
             .setSize(32, 32)
             .setOffset(-16, -16);
 
+          this.generatePixelAvatar('bot-tex', MOCK_BOT.avatarConfig!);
+          this.createRemotePlayer(MOCK_BOT, 'bot-tex');
           this.cameras.main.startFollow(this.playerContainer, true, CAMERA_LERP, CAMERA_LERP).setZoom(INITIAL_ZOOM);
           
           this.cursors = this.input.keyboard!.createCursorKeys();
@@ -675,10 +527,7 @@ export const VirtualSpace: React.FC = () => {
           if (this.textures.exists(key)) this.textures.remove(key);
           this.textures.addSpriteSheet(key, canvas, { frameWidth: 64, frameHeight: 64 });
           ['down', 'left', 'right', 'up'].forEach((dir, i) => { 
-            const animKey = `${key}-${dir}`;
-            if (!this.anims.exists(animKey)) {
-              this.anims.create({ key: animKey, frames: this.anims.generateFrameNumbers(key, { start: i * 4, end: i * 4 + 3 }), frameRate: 8, repeat: -1 }); 
-            }
+            this.anims.create({ key: `${key}-${dir}`, frames: this.anims.generateFrameNumbers(key, { start: i * 4, end: i * 4 + 3 }), frameRate: 8, repeat: -1 }); 
           });
         }
         createRemotePlayer(u: User, tex: string) {
@@ -710,62 +559,14 @@ export const VirtualSpace: React.FC = () => {
     return () => { clearTimeout(timer); gameRef.current?.destroy(true); };
   }, [activeWorkspace?.id, theme]); 
 
-  // Sincronizar avatares remotos con Phaser
-  useEffect(() => {
-    const syncAvatars = () => {
-      if (!gameRef.current) return false;
-      const scene = gameRef.current.scene.getScene('CoworkScene') as any;
-      if (!scene || !scene.remotePlayers) return false;
-
-      // Actualizar o crear avatares remotos
-      onlineUsers.forEach(user => {
-        const existing = scene.remotePlayers.get(user.id);
-        if (existing) {
-          // Detener tweens anteriores para evitar acumulación
-          scene.tweens.killTweensOf(existing);
-          // Interpolación más suave y larga para movimiento fluido
-          scene.tweens.add({
-            targets: existing,
-            x: user.x,
-            y: user.y,
-            duration: 150,
-            ease: 'Sine.easeOut'
-          });
-        } else {
-          // Crear nuevo avatar remoto
-          const texKey = `remote-${user.id}`;
-          scene.generatePixelAvatar(texKey, user.avatarConfig || { skinColor: '#fcd34d', clothingColor: '#6366f1', hairColor: '#4b2c20', accessory: 'none' });
-          scene.createRemotePlayer({ ...user, name: user.name }, texKey);
-        }
-      });
-
-      // Eliminar avatares de usuarios que ya no están
-      scene.remotePlayers.forEach((container: any, odId: string) => {
-        if (!onlineUsers.find(u => u.id === odId)) {
-          container.destroy();
-          scene.remotePlayers.delete(odId);
-        }
-      });
-      return true;
-    };
-
-    // Intentar sincronizar inmediatamente
-    if (!syncAvatars()) {
-      // Si falla, reintentar después de que Phaser esté listo
-      const retryTimer = setTimeout(syncAvatars, 200);
-      return () => clearTimeout(retryTimer);
-    }
-  }, [onlineUsers]);
-
   return (
     <div className={`w-full h-full relative overflow-hidden transition-colors duration-500 ${theme === 'arcade' ? 'bg-black' : (theme === 'space' ? 'bg-[#020617]' : (theme === 'light' ? 'bg-zinc-100' : 'bg-[#09090b]'))}`}>
       <div ref={containerRef} className="w-full h-full outline-none z-0" />
       <div className={`fixed inset-0 z-10 bg-black/40 backdrop-blur-md transition-opacity duration-700 pointer-events-none ${currentUser.isPrivate ? 'opacity-100' : 'opacity-0'}`} />
-      <Minimap currentUser={currentUser} users={onlineUsers} workspace={activeWorkspace} />
+      <Minimap currentUser={currentUser} users={users} workspace={activeWorkspace} />
       {(hasActiveCall || currentUser.isScreenSharing) && (
         <VideoHUD 
           userName={currentUser.name} micOn={currentUser.isMicOn} camOn={currentUser.isCameraOn} sharingOn={currentUser.isScreenSharing} isPrivate={currentUser.isPrivate} usersInCall={usersInCall} stream={stream} screenStream={screenStream}
-          remoteStreams={remoteStreams}
           onToggleMic={toggleMic} onToggleCam={toggleCamera} onToggleShare={() => handleToggleScreenShare()} onTogglePrivacy={togglePrivacy} theme={theme}
           expandedId={expandedId} setExpandedId={setExpandedId}
           onTriggerReaction={(emoji: string) => { const scene = gameRef.current?.scene.getScene('CoworkScene') as any; if (scene?.floatEmoji) scene.floatEmoji(emoji); }}
